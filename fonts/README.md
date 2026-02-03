@@ -11,15 +11,19 @@ Streamlit Cloud 배포 시 `packages.txt` 파일을 통해 나눔 폰트가 자�
 로컬에서 테스트할 때 한글이 깨진다면:
 
 ### macOS
+
 시스템 폰트를 자동으로 사용합니다 (AppleGothic 등)
 
 ### Linux/Ubuntu
+
 ```bash
 sudo apt-get install fonts-nanum fonts-nanum-coding fonts-nanum-extra
 ```
 
 ### Windows
+
 나눔 폰트를 다운로드하여 이 폴더에 `NanumGothic.ttf` 파일을 넣으세요.
+
 - 다운로드: https://hangeul.naver.com/font
 
 ## 참고사항

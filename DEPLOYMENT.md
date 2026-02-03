@@ -61,6 +61,7 @@ git push -u origin main
 
 1. 우측 상단의 **"New app"** 버튼 클릭
 2. 다음 정보 입력:
+
    - **Repository**: `YOUR_USERNAME/pdf-combiner` 선택
    - **Branch**: `main`
    - **Main file path**: `app.py`
@@ -110,17 +111,21 @@ GitHub에 푸시하면 Streamlit Cloud가 자동으로 앱을 다시 배포합�
 ## 💡 유용한 팁
 
 ### 앱 설정 변경
+
 - Streamlit Cloud 대시보드에서 앱을 선택
 - "Settings" 메뉴에서 Python 버전, 리소스 등 설정 가능
 
 ### 로그 확인
+
 - Streamlit Cloud 대시보드에서 "Manage app" 클릭
 - 하단에 실시간 로그가 표시됨
 
 ### 앱 재시작
+
 - 우측 상단 메뉴 > "Reboot app" 클릭
 
 ### 커스텀 도메인 (유료)
+
 - Settings > General에서 커스텀 도메인 설정 가능
 
 ---
@@ -128,15 +133,18 @@ GitHub에 푸시하면 Streamlit Cloud가 자동으로 앱을 다시 배포합�
 ## ❓ 문제 해결
 
 ### 배포 실패 시
+
 1. `requirements.txt`에 모든 패키지가 명시되어 있는지 확인
 2. `packages.txt`가 제대로 업로드되었는지 확인 (한글 폰트용)
 3. Streamlit Cloud 로그를 확인하여 오류 메시지 확인
 
 ### 한글이 깨질 때
+
 - `packages.txt` 파일이 리포지토리에 포함되어 있는지 확인
 - 앱을 재시작(Reboot)해보세요
 
 ### 파일 업로드 크기 제한
+
 - Streamlit Cloud는 기본적으로 200MB까지 지원
 - 더 큰 파일이 필요하면 설정에서 조정 가능
 
