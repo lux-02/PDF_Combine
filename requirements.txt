@@ -1,0 +1,7 @@
+streamlit
+pypdf
+Pillow
+pymupdf
+streamlit-sortables
+python-docx
+reportlab
