@@ -6,6 +6,7 @@ import os
 import fitz  # PyMuPDF
 from streamlit_sortables import sort_items
 import base64
+import re
 try:
     from docx import Document
     DOCX_PARSER_SUPPORT = True
@@ -334,11 +335,66 @@ def get_thumbnail(file):
         return None
     return None
 
+def natural_sort_key(value):
+    """파일명 안 숫자를 자연스러운 순서로 정렬하기 위한 키입니다."""
+    parts = re.split(r"(\d+)", value.casefold())
+    return [int(part) if part.isdigit() else part for part in parts]
+
+def refresh_uploader():
+    st.session_state.uploader_key += 1
+
+def refresh_sortable():
+    st.session_state.sortable_key_version += 1
+
+def sync_uploaded_files(uploaded_files):
+    current_names = [f.name for f in st.session_state.file_list]
+    files_added = False
+
+    for uploaded_file in uploaded_files:
+        if uploaded_file.name in current_names:
+            continue
+
+        st.session_state.file_list.append(uploaded_file)
+        current_names.append(uploaded_file.name)
+
+        thumb = get_thumbnail(uploaded_file)
+        if thumb:
+            st.session_state.thumbnails[uploaded_file.name] = thumb
+
+        files_added = True
+
+    if files_added:
+        refresh_sortable()
+
+def remove_file_at_index(idx):
+    removed_file = st.session_state.file_list.pop(idx)
+    st.session_state.thumbnails.pop(removed_file.name, None)
+    refresh_uploader()
+    refresh_sortable()
+
+def clear_uploaded_files():
+    st.session_state.file_list = []
+    st.session_state.thumbnails = {}
+    refresh_uploader()
+    refresh_sortable()
+
+def sort_uploaded_files(reverse=False):
+    st.session_state.file_list = sorted(
+        st.session_state.file_list,
+        key=lambda file: natural_sort_key(file.name),
+        reverse=reverse
+    )
+    refresh_sortable()
+
 # 세션 상태 초기화
 if 'file_list' not in st.session_state:
     st.session_state.file_list = []
 if 'thumbnails' not in st.session_state:
     st.session_state.thumbnails = {}
+if 'uploader_key' not in st.session_state:
+    st.session_state.uploader_key = 0
+if 'sortable_key_version' not in st.session_state:
+    st.session_state.sortable_key_version = 0
 
 # 파일 업로드 섹션
 st.markdown("### 📁 파일 업로드")
@@ -348,19 +404,12 @@ uploaded_files = st.file_uploader(
     "파일을 드래그하거나 클릭하여 선택하세요", 
     type=["pdf", "jpg", "jpeg", "png", "docx"], 
     accept_multiple_files=True,
-    label_visibility="collapsed"
+    label_visibility="collapsed",
+    key=f"file_uploader_{st.session_state.uploader_key}"
 )
 
 if uploaded_files:
-    # 새로운 파일이 추가되었는지 확인하여 세션 상태 업데이트
-    current_names = [f.name for f in st.session_state.file_list]
-    for uploaded_file in uploaded_files:
-        if uploaded_file.name not in current_names:
-            st.session_state.file_list.append(uploaded_file)
-            # 썸네일 생성 및 저장
-            thumb = get_thumbnail(uploaded_file)
-            if thumb:
-                st.session_state.thumbnails[uploaded_file.name] = thumb
+    sync_uploaded_files(uploaded_files)
 
 if st.session_state.file_list:
     st.markdown("---")
@@ -374,17 +423,30 @@ if st.session_state.file_list:
         st.metric("총 용량", f"{total_size:.2f} MB")
     with col3:
         if st.button("🗑️ 전체 삭제", use_container_width=True):
-            st.session_state.file_list = []
-            st.session_state.thumbnails = {}
+            clear_uploaded_files()
             st.rerun()
     
     st.markdown("---")
     st.markdown("### 🔄 파일 순서 조정")
-    st.info("💡 **팁**: 아래 파일명을 드래그하여 순서를 변경하세요. 썸네일 미리보기가 실시간으로 업데이트됩니다!")
+    sort_col1, sort_col2 = st.columns(2)
+    with sort_col1:
+        if st.button("🔤 A-Z / 1-9 정렬", use_container_width=True):
+            sort_uploaded_files(reverse=False)
+            st.rerun()
+    with sort_col2:
+        if st.button("🔠 Z-A / 9-1 역정렬", use_container_width=True):
+            sort_uploaded_files(reverse=True)
+            st.rerun()
+
+    st.info("💡 **팁**: 버튼으로 이름 기준 정렬하거나, 아래 파일명을 드래그하여 세부 순서를 직접 바꿀 수 있습니다.")
 
     # 드래그 앤 드롭 정렬 (이름 기반)
     file_names = [file.name for file in st.session_state.file_list]
-    sorted_names = sort_items(file_names, direction="horizontal", key="drag_sort_key")
+    sorted_names = sort_items(
+        file_names,
+        direction="horizontal",
+        key=f"drag_sort_key_{st.session_state.sortable_key_version}"
+    )
     
     # 정렬 결과 반영
     if sorted_names != file_names:
@@ -425,10 +487,8 @@ if st.session_state.file_list:
                         st.caption(f"📦 {file_size:.1f} KB")
                         
                         # 삭제 버튼
-                        if st.button("🗑️ 삭제", key=f"del_{idx}", use_container_width=True):
-                            st.session_state.file_list.pop(idx)
-                            if file.name in st.session_state.thumbnails:
-                                del st.session_state.thumbnails[file.name]
+                        if st.button("🗑️ 삭제", key=f"del_{file.name}", use_container_width=True):
+                            remove_file_at_index(idx)
                             st.rerun()
 
     st.markdown("---")
