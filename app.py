@@ -1,186 +1,334 @@
-import streamlit as st
-from pypdf import PdfWriter, PdfReader
-from PIL import Image
+import html
 import io
+import math
 import os
+import uuid
+
 import fitz  # PyMuPDF
-from streamlit_sortables import sort_items
-import base64
-import re
+import streamlit as st
+from PIL import Image
+from pypdf import PdfReader, PdfWriter
+
 try:
     from docx import Document
+
     DOCX_PARSER_SUPPORT = True
 except ImportError:
     DOCX_PARSER_SUPPORT = False
+
 try:
     from reportlab.lib.pagesizes import A4
-    from reportlab.pdfgen import canvas
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
+    from reportlab.pdfgen import canvas
+
     REPORTLAB_SUPPORT = True
 except ImportError:
     REPORTLAB_SUPPORT = False
 
 DOCX_TEXT_SUPPORT = DOCX_PARSER_SUPPORT and REPORTLAB_SUPPORT
+SUPPORTED_TYPES = ["pdf", "jpg", "jpeg", "png", "docx"]
+THUMBNAIL_SCALE = 0.30
+CANVAS_PAGE_SIZE = 12
 
-# 페이지 설정
+
 st.set_page_config(
-    page_title="PDF Combiner - 파일 병합 도구",
-    page_icon="📄",
+    page_title="PDF Page Studio",
+    page_icon="🧩",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="collapsed",
 )
 
-# 커스텀 CSS로 모던한 디자인 적용
-st.markdown("""
-<style>
-    /* 전체 테마 */
-    .main {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 2rem;
-    }
-    
-    /* 메인 컨테이너 */
-    .block-container {
-        max-width: 1200px;
-        padding: 2rem;
-        background: white;
-        border-radius: 20px;
-        box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-    }
-    
-    /* 제목 스타일 */
-    h1 {
-        color: #667eea;
-        font-size: 3rem !important;
-        font-weight: 800 !important;
-        text-align: center;
-        margin-bottom: 0.5rem !important;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-    }
-    
-    /* 부제목 */
-    .subtitle {
-        text-align: center;
-        color: #666;
-        font-size: 1.2rem;
-        margin-bottom: 2rem;
-    }
-    
-    /* 업로드 영역 */
-    .uploadedFile {
-        border: 2px dashed #667eea !important;
-        border-radius: 15px !important;
-        padding: 2rem !important;
-        background: #f8f9ff !important;
-    }
-    
-    /* 버튼 스타일 */
-    .stButton>button {
-        border-radius: 10px;
-        font-weight: 600;
-        transition: all 0.3s ease;
-        border: none;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-    }
-    
-    .stButton>button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(0,0,0,0.3);
-    }
-    
-    /* Primary 버튼 */
-    .stButton>button[kind="primary"] {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-    }
-    
-    /* 파일 카드 */
-    [data-testid="column"] > div > div > div {
-        transition: all 0.3s ease;
-    }
-    
-    [data-testid="column"] > div > div > div:hover {
-        transform: scale(1.05);
-    }
-    
-    /* 진행 바 */
-    .stProgress > div > div > div {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    }
-    
-    /* 정보 박스 */
-    .stInfo {
-        background: #e8eeff;
-        border-left: 4px solid #667eea;
-        border-radius: 10px;
-    }
-    
-    /* 성공 메시지 */
-    .stSuccess {
-        background: #d4edda;
-        border-left: 4px solid #28a745;
-        border-radius: 10px;
-    }
-    
-    /* 경고 메시지 */
-    .stWarning {
-        background: #fff3cd;
-        border-left: 4px solid #ffc107;
-        border-radius: 10px;
-    }
-    
-    /* 썸네일 컨테이너 */
-    [data-testid="stImage"] {
-        border-radius: 10px;
-        overflow: hidden;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-    }
-    
-    /* 구분선 */
-    hr {
-        margin: 2rem 0;
-        border: none;
-        height: 2px;
-        background: linear-gradient(90deg, transparent, #667eea, transparent);
-    }
-    
-    /* 텍스트 입력 */
-    .stTextInput>div>div>input {
-        border-radius: 10px;
-        border: 2px solid #e0e0e0;
-        padding: 0.75rem;
-        transition: all 0.3s ease;
-    }
-    
-    .stTextInput>div>div>input:focus {
-        border-color: #667eea;
-        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-    }
-    
-    /* 파일 업로더 */
-    [data-testid="stFileUploader"] {
-        border-radius: 15px;
-    }
-    
-    /* 캡션 */
-    .stCaption {
-        font-weight: 500;
-        color: #555;
-    }
-</style>
-""", unsafe_allow_html=True)
 
-# 헤더
-st.markdown("<h1>📄 PDF Combiner</h1>", unsafe_allow_html=True)
-st.markdown("<p class='subtitle'>여러 PDF, 이미지, Word 파일을 하나로 병합하세요 ✨</p>", unsafe_allow_html=True)
+st.markdown(
+    """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap');
+
+:root {
+    --paper: #f5efe3;
+    --panel: rgba(255, 252, 247, 0.78);
+    --card: #fffdfa;
+    --ink: #1d2930;
+    --muted: #65747c;
+    --accent: #0f766e;
+    --accent-deep: #134e4a;
+    --accent-soft: #e6f3f0;
+    --signal: #c75d1f;
+    --line: #d9d2c4;
+    --shadow: 0 28px 80px rgba(28, 36, 39, 0.12);
+}
+
+html, body, [class*="css"] {
+    font-family: 'IBM Plex Sans KR', sans-serif;
+}
+
+[data-testid="stAppViewContainer"] {
+    background:
+        radial-gradient(circle at top left, rgba(15, 118, 110, 0.16), transparent 26%),
+        radial-gradient(circle at top right, rgba(199, 93, 31, 0.12), transparent 24%),
+        linear-gradient(180deg, #fbf8f2 0%, #f2ecdf 100%);
+}
+
+.block-container {
+    max-width: 1320px;
+    padding-top: 1.8rem;
+    padding-bottom: 3rem;
+}
+
+.hero-panel {
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.88) 0%, rgba(249, 245, 237, 0.72) 100%);
+    border: 1px solid rgba(217, 210, 196, 0.92);
+    border-radius: 28px;
+    box-shadow: var(--shadow);
+    padding: 2rem 2.2rem;
+    margin-bottom: 1.4rem;
+}
+
+.hero-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.5fr) minmax(260px, 0.85fr);
+    gap: 1.25rem;
+    align-items: stretch;
+}
+
+.eyebrow {
+    margin: 0 0 0.6rem 0;
+    color: var(--signal);
+    font-weight: 700;
+    font-size: 0.82rem;
+    letter-spacing: 0.16em;
+}
+
+.hero-panel h1 {
+    margin: 0;
+    color: var(--ink);
+    font-family: 'Fraunces', serif;
+    font-size: clamp(2.2rem, 4vw, 3.8rem);
+    line-height: 1.02;
+}
+
+.hero-panel p {
+    margin: 1rem 0 0 0;
+    color: var(--muted);
+    font-size: 1.03rem;
+    line-height: 1.68;
+}
+
+.hero-aside {
+    background: rgba(15, 118, 110, 0.08);
+    border: 1px solid rgba(15, 118, 110, 0.14);
+    border-radius: 22px;
+    padding: 1.1rem 1.2rem;
+}
+
+.hero-aside h3 {
+    margin: 0 0 0.75rem 0;
+    color: var(--ink);
+    font-size: 1rem;
+}
+
+.hero-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.hero-pills span {
+    background: rgba(255, 255, 255, 0.82);
+    border: 1px solid rgba(15, 118, 110, 0.14);
+    color: var(--accent-deep);
+    border-radius: 999px;
+    padding: 0.45rem 0.85rem;
+    font-size: 0.88rem;
+    font-weight: 600;
+}
+
+.section-title {
+    margin: 1.25rem 0 0.75rem 0;
+    color: var(--ink);
+    font-family: 'Fraunces', serif;
+    font-size: 1.6rem;
+}
+
+.section-kicker {
+    color: var(--signal);
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    margin-bottom: 0.3rem;
+}
+
+.section-note {
+    background: var(--accent-soft);
+    border: 1px solid rgba(15, 118, 110, 0.14);
+    color: var(--accent-deep);
+    border-radius: 16px;
+    padding: 0.75rem 0.9rem;
+    font-size: 0.92rem;
+    margin-bottom: 0.85rem;
+}
+
+.insert-banner {
+    background: rgba(255, 249, 237, 0.96);
+    border: 1px dashed rgba(199, 93, 31, 0.34);
+    color: #8a4216;
+    border-radius: 16px;
+    padding: 0.75rem 0.9rem;
+    font-size: 0.92rem;
+    margin-bottom: 0.85rem;
+}
+
+.page-topline {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    align-items: center;
+    margin-bottom: 0.55rem;
+}
+
+.page-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 3rem;
+    padding: 0.35rem 0.75rem;
+    border-radius: 999px;
+    background: rgba(15, 118, 110, 0.12);
+    color: var(--accent-deep);
+    font-weight: 700;
+    font-size: 0.88rem;
+}
+
+.source-pill {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    background: rgba(29, 41, 48, 0.06);
+    color: var(--muted);
+    padding: 0.32rem 0.6rem;
+    font-size: 0.74rem;
+    font-weight: 600;
+}
+
+.page-meta {
+    color: var(--ink);
+    font-size: 0.93rem;
+    font-weight: 600;
+    line-height: 1.45;
+    margin: 0.35rem 0 0.2rem 0;
+}
+
+.page-submeta {
+    color: var(--muted);
+    font-size: 0.82rem;
+    line-height: 1.45;
+    margin-bottom: 0.6rem;
+}
+
+.empty-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.empty-card {
+    background: rgba(255, 255, 255, 0.82);
+    border: 1px solid rgba(217, 210, 196, 0.95);
+    border-radius: 22px;
+    padding: 1.35rem;
+    min-height: 180px;
+    box-shadow: 0 18px 44px rgba(28, 36, 39, 0.08);
+}
+
+.empty-card h3 {
+    margin: 0.8rem 0 0.5rem 0;
+    color: var(--ink);
+    font-size: 1.08rem;
+}
+
+.empty-card p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.94rem;
+    line-height: 1.6;
+}
+
+div[data-testid="stVerticalBlockBorderWrapper"] {
+    background: var(--panel);
+    border: 1px solid rgba(217, 210, 196, 0.92);
+    border-radius: 22px;
+    box-shadow: 0 18px 48px rgba(28, 36, 39, 0.08);
+}
+
+div[data-testid="stMetric"] {
+    background: rgba(255, 255, 255, 0.72);
+    border: 1px solid rgba(217, 210, 196, 0.92);
+    border-radius: 18px;
+    padding: 0.4rem;
+}
+
+div[data-testid="stMetricValue"] {
+    color: var(--ink);
+}
+
+div[data-testid="stMetricLabel"] {
+    color: var(--muted);
+}
+
+div[data-testid="stFileUploader"] {
+    background: rgba(255, 255, 255, 0.72);
+    border-radius: 18px;
+}
+
+.stButton > button {
+    border-radius: 999px;
+    border: 1px solid rgba(15, 118, 110, 0.1);
+    background: #eef3f2;
+    color: var(--ink);
+    font-weight: 600;
+    min-height: 2.8rem;
+    transition: all 0.18s ease;
+}
+
+.stButton > button:hover {
+    transform: translateY(-1px);
+    border-color: rgba(15, 118, 110, 0.28);
+}
+
+.stButton > button[kind="primary"] {
+    background: linear-gradient(135deg, #0f766e 0%, #134e4a 100%);
+    color: white;
+    box-shadow: 0 14px 28px rgba(15, 118, 110, 0.2);
+}
+
+.stTextInput > div > div > input,
+.stNumberInput input {
+    border-radius: 14px;
+}
+
+div[data-testid="stImage"] img {
+    border-radius: 16px;
+    border: 1px solid rgba(217, 210, 196, 0.8);
+}
+
+@media (max-width: 960px) {
+    .hero-grid,
+    .empty-grid {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+""",
+    unsafe_allow_html=True,
+)
+
 
 def iter_docx_blocks(document):
-    from docx.oxml.text.paragraph import CT_P
     from docx.oxml.table import CT_Tbl
+    from docx.oxml.text.paragraph import CT_P
     from docx.table import Table
     from docx.text.paragraph import Paragraph
 
@@ -190,23 +338,19 @@ def iter_docx_blocks(document):
         elif isinstance(child, CT_Tbl):
             yield Table(child, document)
 
+
 def find_korean_font_path():
-    """한글 폰트 경로를 찾습니다. 여러 환경을 지원합니다."""
     candidates = [
-        # 로컬 fonts 폴더
         os.path.join(os.getcwd(), "fonts", "NanumGothic.ttf"),
         os.path.join(os.getcwd(), "fonts", "NanumGothic-Regular.ttf"),
-        # Streamlit Cloud (Ubuntu)
         "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
         "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf",
-        # macOS
         "/System/Library/Fonts/Supplemental/AppleGothic.ttf",
         "/Library/Fonts/AppleGothic.ttf",
         "/Library/Fonts/NanumGothic.ttf",
         "/Library/Fonts/NanumGothic-Regular.ttf",
         "/Library/Fonts/Malgun Gothic.ttf",
         "/Library/Fonts/Arial Unicode.ttf",
-        # Windows
         "C:\\Windows\\Fonts\\malgun.ttf",
         "C:\\Windows\\Fonts\\NanumGothic.ttf",
     ]
@@ -215,6 +359,7 @@ def find_korean_font_path():
             return path
     return None
 
+
 def docx_to_pdf_simple(docx_bytes):
     document = Document(io.BytesIO(docx_bytes))
     blocks = []
@@ -222,13 +367,14 @@ def docx_to_pdf_simple(docx_bytes):
         if hasattr(block, "text"):
             text = block.text.strip()
             blocks.append(text if text else "")
-        else:
-            rows = []
-            for row in block.rows:
-                cells = [cell.text.replace("\n", " ").strip() for cell in row.cells]
-                rows.append(" | ".join(cells).strip())
-            blocks.extend(rows)
-            blocks.append("")
+            continue
+
+        rows = []
+        for row in block.rows:
+            cells = [cell.text.replace("\n", " ").strip() for cell in row.cells]
+            rows.append(" | ".join(cells).strip())
+        blocks.extend(rows)
+        blocks.append("")
 
     buffer = io.BytesIO()
     page_width, page_height = A4
@@ -243,7 +389,8 @@ def docx_to_pdf_simple(docx_bytes):
     font_path = find_korean_font_path()
     if font_path:
         try:
-            pdfmetrics.registerFont(TTFont("DocxFont", font_path))
+            if "DocxFont" not in pdfmetrics.getRegisteredFontNames():
+                pdfmetrics.registerFont(TTFont("DocxFont", font_path))
             font_name = "DocxFont"
             font_used = True
         except Exception:
@@ -255,9 +402,11 @@ def docx_to_pdf_simple(docx_bytes):
     def wrap_text(text):
         if not text:
             return [""]
+
         words = text.split()
         if not words:
             return [""]
+
         lines = []
         current = ""
         for word in words:
@@ -307,357 +456,727 @@ def docx_to_pdf_simple(docx_bytes):
     buffer.seek(0)
     return buffer, font_used, has_non_ascii
 
-def get_thumbnail(file):
-    """파일의 썸네일을 생성합니다."""
-    file_ext = os.path.splitext(file.name)[1].lower()
-    try:
-        if file_ext == ".pdf":
-            # PDF의 첫 페이지를 이미지로 변환
-            doc = fitz.open(stream=file.read(), filetype="pdf")
-            file.seek(0) # 스트림 초기화
-            page = doc.load_page(0)
-            pix = page.get_pixmap(matrix=fitz.Matrix(0.2, 0.2)) # 축소된 이미지
-            img_data = pix.tobytes("png")
-            doc.close()
-            return img_data
-        elif file_ext in [".jpg", ".jpeg", ".png"]:
-            # 이미지 파일 썸네일 생성
-            img = Image.open(file)
-            img.thumbnail((150, 150))
-            file.seek(0) # 스트림 초기화
-            img_byte_arr = io.BytesIO()
-            img.save(img_byte_arr, format="PNG")
-            return img_byte_arr.getvalue()
-        elif file_ext == ".docx":
-            # Word 파일 썸네일 표시용 플래그
-            return "DOCX_ICON"
-    except Exception as e:
-        return None
-    return None
 
-def natural_sort_key(value):
-    """파일명 안 숫자를 자연스러운 순서로 정렬하기 위한 키입니다."""
-    parts = re.split(r"(\d+)", value.casefold())
-    return [int(part) if part.isdigit() else part for part in parts]
+def image_to_pdf_bytes(image_bytes):
+    image = Image.open(io.BytesIO(image_bytes))
+    if image.mode in ("RGBA", "P"):
+        image = image.convert("RGB")
+
+    buffer = io.BytesIO()
+    image.save(buffer, format="PDF")
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+def create_page_items(pdf_bytes, document_id, source_name, source_kind):
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    page_items = []
+    try:
+        if doc.page_count == 0:
+            raise ValueError("페이지가 없는 문서는 편집기에 추가할 수 없습니다.")
+
+        for page_index in range(doc.page_count):
+            page = doc.load_page(page_index)
+            pix = page.get_pixmap(
+                matrix=fitz.Matrix(THUMBNAIL_SCALE, THUMBNAIL_SCALE),
+                alpha=False,
+            )
+            page_items.append(
+                {
+                    "id": uuid.uuid4().hex,
+                    "document_id": document_id,
+                    "source_name": source_name,
+                    "source_kind": source_kind,
+                    "source_page_number": page_index + 1,
+                    "source_total_pages": doc.page_count,
+                    "thumbnail": pix.tobytes("png"),
+                }
+            )
+    finally:
+        doc.close()
+
+    return page_items
+
+
+def build_document_from_upload(uploaded_file):
+    raw_bytes = uploaded_file.getvalue()
+    file_ext = os.path.splitext(uploaded_file.name)[1].lower()
+    document_id = uuid.uuid4().hex
+    notices = []
+
+    if file_ext == ".pdf":
+        pdf_bytes = raw_bytes
+        source_kind = "PDF"
+    elif file_ext == ".docx":
+        if not DOCX_TEXT_SUPPORT:
+            raise RuntimeError("DOCX 변환에 필요한 python-docx 또는 reportlab이 설치되어 있지 않습니다.")
+        pdf_stream, font_used, has_non_ascii = docx_to_pdf_simple(raw_bytes)
+        pdf_bytes = pdf_stream.getvalue()
+        source_kind = "DOCX"
+        if has_non_ascii and not font_used:
+            notices.append(
+                {
+                    "level": "warning",
+                    "text": (
+                        f"{uploaded_file.name}: 한글 폰트를 찾지 못해 일부 글자가 깨질 수 있습니다. "
+                        "fonts/NanumGothic.ttf 추가를 권장합니다."
+                    ),
+                }
+            )
+    elif file_ext in [".jpg", ".jpeg", ".png"]:
+        pdf_bytes = image_to_pdf_bytes(raw_bytes)
+        source_kind = "IMAGE"
+    else:
+        raise ValueError("지원하지 않는 파일 형식입니다.")
+
+    page_items = create_page_items(
+        pdf_bytes=pdf_bytes,
+        document_id=document_id,
+        source_name=uploaded_file.name,
+        source_kind=source_kind,
+    )
+
+    document = {
+        "id": document_id,
+        "name": uploaded_file.name,
+        "kind": source_kind,
+        "pdf_bytes": pdf_bytes,
+        "page_count": len(page_items),
+    }
+    return document, page_items, notices
+
+
+def ensure_session_state():
+    defaults = {
+        "documents": {},
+        "page_items": [],
+        "selected_page_ids": set(),
+        "uploader_key": 0,
+        "insert_position": 0,
+        "canvas_page": 1,
+        "move_target_position": 1,
+        "output_pdf_bytes": None,
+        "export_filename": "edited_output.pdf",
+        "notices": [],
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+
+def invalidate_output():
+    st.session_state.output_pdf_bytes = None
+
 
 def refresh_uploader():
     st.session_state.uploader_key += 1
 
-def refresh_sortable():
-    st.session_state.sortable_key_version += 1
 
-def sync_uploaded_files(uploaded_files):
-    current_names = [f.name for f in st.session_state.file_list]
-    files_added = False
+def set_notices(notices):
+    st.session_state.notices = notices
+
+
+def prune_unused_documents():
+    active_document_ids = {page["document_id"] for page in st.session_state.page_items}
+    st.session_state.documents = {
+        doc_id: document
+        for doc_id, document in st.session_state.documents.items()
+        if doc_id in active_document_ids
+    }
+
+
+def clear_selection():
+    for page_id in list(st.session_state.selected_page_ids):
+        widget_key = f"select_{page_id}"
+        if widget_key in st.session_state:
+            st.session_state[widget_key] = False
+    st.session_state.selected_page_ids = set()
+
+
+def select_page_ids(page_ids):
+    for page_id in page_ids:
+        widget_key = f"select_{page_id}"
+        if widget_key in st.session_state:
+            st.session_state[widget_key] = True
+    st.session_state.selected_page_ids.update(page_ids)
+
+
+def get_selected_page_ids_in_order():
+    selected_lookup = st.session_state.selected_page_ids
+    return [
+        page["id"]
+        for page in st.session_state.page_items
+        if page["id"] in selected_lookup
+    ]
+
+
+def hydrate_selection_from_widgets():
+    selected_page_ids = set(st.session_state.selected_page_ids)
+    current_page_ids = {page["id"] for page in st.session_state.page_items}
+
+    for page in st.session_state.page_items:
+        widget_key = f"select_{page['id']}"
+        if widget_key not in st.session_state:
+            continue
+        if st.session_state[widget_key]:
+            selected_page_ids.add(page["id"])
+        else:
+            selected_page_ids.discard(page["id"])
+
+    st.session_state.selected_page_ids = {
+        page_id for page_id in selected_page_ids if page_id in current_page_ids
+    }
+
+
+def clamp_editor_state():
+    total_pages = len(st.session_state.page_items)
+    current_page_ids = {page["id"] for page in st.session_state.page_items}
+    st.session_state.selected_page_ids = {
+        page_id
+        for page_id in st.session_state.selected_page_ids
+        if page_id in current_page_ids
+    }
+
+    st.session_state.insert_position = max(0, min(st.session_state.insert_position, total_pages))
+
+    max_canvas_page = max(1, math.ceil(total_pages / CANVAS_PAGE_SIZE)) if total_pages else 1
+    st.session_state.canvas_page = max(1, min(st.session_state.canvas_page, max_canvas_page))
+
+    remaining_slots = max(1, total_pages - len(get_selected_page_ids_in_order()) + 1)
+    st.session_state.move_target_position = max(
+        1,
+        min(st.session_state.move_target_position, remaining_slots),
+    )
+
+
+def jump_canvas_to_index(index):
+    st.session_state.canvas_page = max(1, (index // CANVAS_PAGE_SIZE) + 1)
+
+
+def describe_insert_position():
+    page_items = st.session_state.page_items
+    insert_position = st.session_state.insert_position
+
+    if not page_items:
+        return "첫 문서를 올리면 모든 페이지가 바로 편집 캔버스로 펼쳐집니다."
+    if insert_position <= 0:
+        return "다음 업로드는 문서 맨 앞에 삽입됩니다."
+    if insert_position >= len(page_items):
+        return "다음 업로드는 문서 맨 뒤에 이어 붙습니다."
+
+    prev_page = page_items[insert_position - 1]
+    return (
+        f"다음 업로드는 {insert_position}번 페이지 뒤에 삽입됩니다. "
+        f"({html.escape(prev_page['source_name'])} · 원본 {prev_page['source_page_number']}페이지 뒤)"
+    )
+
+
+def reset_editor():
+    clear_selection()
+    st.session_state.documents = {}
+    st.session_state.page_items = []
+    st.session_state.insert_position = 0
+    st.session_state.canvas_page = 1
+    st.session_state.move_target_position = 1
+    st.session_state.output_pdf_bytes = None
+    st.session_state.export_filename = "edited_output.pdf"
+    set_notices([])
+    refresh_uploader()
+
+
+def add_documents_to_canvas(uploaded_files):
+    insertion_index = st.session_state.insert_position
+    new_documents = {}
+    new_pages = []
+    notices = []
+    success_documents = 0
 
     for uploaded_file in uploaded_files:
-        if uploaded_file.name in current_names:
-            continue
+        try:
+            document, page_items, doc_notices = build_document_from_upload(uploaded_file)
+            new_documents[document["id"]] = document
+            new_pages.extend(page_items)
+            notices.extend(doc_notices)
+            success_documents += 1
+        except Exception as exc:
+            notices.append({"level": "error", "text": f"{uploaded_file.name}: {exc}"})
 
-        st.session_state.file_list.append(uploaded_file)
-        current_names.append(uploaded_file.name)
+    if success_documents == 0:
+        set_notices(notices)
+        return
 
-        thumb = get_thumbnail(uploaded_file)
-        if thumb:
-            st.session_state.thumbnails[uploaded_file.name] = thumb
+    st.session_state.documents.update(new_documents)
+    st.session_state.page_items[insertion_index:insertion_index] = new_pages
+    st.session_state.insert_position = insertion_index + len(new_pages)
+    jump_canvas_to_index(insertion_index)
+    invalidate_output()
 
-        files_added = True
-
-    if files_added:
-        refresh_sortable()
-
-def remove_file_at_index(idx):
-    removed_file = st.session_state.file_list.pop(idx)
-    st.session_state.thumbnails.pop(removed_file.name, None)
-    refresh_uploader()
-    refresh_sortable()
-
-def clear_uploaded_files():
-    st.session_state.file_list = []
-    st.session_state.thumbnails = {}
-    refresh_uploader()
-    refresh_sortable()
-
-def sort_uploaded_files(reverse=False):
-    st.session_state.file_list = sorted(
-        st.session_state.file_list,
-        key=lambda file: natural_sort_key(file.name),
-        reverse=reverse
+    notices.insert(
+        0,
+        {
+            "level": "info",
+            "text": (
+                f"{success_documents}개 문서를 편집 캔버스에 추가했습니다. "
+                f"새로 들어간 페이지는 총 {len(new_pages)}장입니다."
+            ),
+        },
     )
-    refresh_sortable()
+    set_notices(notices)
+    clamp_editor_state()
 
-# 세션 상태 초기화
-if 'file_list' not in st.session_state:
-    st.session_state.file_list = []
-if 'thumbnails' not in st.session_state:
-    st.session_state.thumbnails = {}
-if 'uploader_key' not in st.session_state:
-    st.session_state.uploader_key = 0
-if 'sortable_key_version' not in st.session_state:
-    st.session_state.sortable_key_version = 0
 
-# 파일 업로드 섹션
-st.markdown("### 📁 파일 업로드")
-st.markdown("PDF, 이미지(JPG, PNG), Word 문서(DOCX) 파일을 여러 개 선택하세요")
+def move_selected_pages(target_position):
+    selected_ids = get_selected_page_ids_in_order()
+    if not selected_ids:
+        return False
 
-uploaded_files = st.file_uploader(
-    "파일을 드래그하거나 클릭하여 선택하세요", 
-    type=["pdf", "jpg", "jpeg", "png", "docx"], 
-    accept_multiple_files=True,
-    label_visibility="collapsed",
-    key=f"file_uploader_{st.session_state.uploader_key}"
+    moved_pages = []
+    remaining_pages = []
+    selected_lookup = set(selected_ids)
+    for page in st.session_state.page_items:
+        if page["id"] in selected_lookup:
+            moved_pages.append(page)
+        else:
+            remaining_pages.append(page)
+
+    target_index = max(0, min(target_position, len(remaining_pages)))
+    st.session_state.page_items = (
+        remaining_pages[:target_index] + moved_pages + remaining_pages[target_index:]
+    )
+    st.session_state.insert_position = target_index + len(moved_pages)
+    jump_canvas_to_index(target_index)
+    invalidate_output()
+    clamp_editor_state()
+    return True
+
+
+def move_single_page(page_id, direction):
+    page_items = st.session_state.page_items
+    current_index = next(
+        (index for index, page in enumerate(page_items) if page["id"] == page_id),
+        None,
+    )
+    if current_index is None:
+        return False
+
+    target_index = current_index + direction
+    if target_index < 0 or target_index >= len(page_items):
+        return False
+
+    page = page_items.pop(current_index)
+    page_items.insert(target_index, page)
+    st.session_state.page_items = page_items
+    st.session_state.insert_position = target_index + 1
+    jump_canvas_to_index(target_index)
+    invalidate_output()
+    clamp_editor_state()
+    return True
+
+
+def remove_pages_by_ids(page_ids):
+    page_ids = set(page_ids)
+    if not page_ids:
+        return False
+
+    st.session_state.page_items = [
+        page for page in st.session_state.page_items if page["id"] not in page_ids
+    ]
+    st.session_state.selected_page_ids.difference_update(page_ids)
+    for page_id in page_ids:
+        widget_key = f"select_{page_id}"
+        if widget_key in st.session_state:
+            st.session_state[widget_key] = False
+
+    prune_unused_documents()
+    invalidate_output()
+    clamp_editor_state()
+    return True
+
+
+def set_insert_position(position):
+    st.session_state.insert_position = position
+    clamp_editor_state()
+
+
+def build_output_pdf():
+    writer = PdfWriter()
+    reader_cache = {}
+    try:
+        for page in st.session_state.page_items:
+            document_id = page["document_id"]
+            if document_id not in reader_cache:
+                document = st.session_state.documents[document_id]
+                reader_cache[document_id] = PdfReader(io.BytesIO(document["pdf_bytes"]))
+            reader = reader_cache[document_id]
+            writer.add_page(reader.pages[page["source_page_number"] - 1])
+
+        output_stream = io.BytesIO()
+        writer.write(output_stream)
+        output_stream.seek(0)
+        return output_stream.getvalue()
+    finally:
+        writer.close()
+
+
+def show_notices():
+    for notice in st.session_state.notices:
+        level = notice.get("level", "info")
+        message = notice.get("text", "")
+        if level == "warning":
+            st.warning(message)
+        elif level == "error":
+            st.error(message)
+        else:
+            st.info(message)
+
+
+def render_source_summary():
+    active_document_ids = []
+    seen = set()
+    for page in st.session_state.page_items:
+        document_id = page["document_id"]
+        if document_id in seen:
+            continue
+        seen.add(document_id)
+        active_document_ids.append(document_id)
+
+    with st.expander("현재 소스 문서 보기", expanded=False):
+        for document_id in active_document_ids:
+            document = st.session_state.documents[document_id]
+            active_pages = sum(
+                1 for page in st.session_state.page_items if page["document_id"] == document_id
+            )
+            st.markdown(
+                f"- **{document['name']}** · {document['kind']} · 현재 사용 중 {active_pages}장"
+            )
+
+
+ensure_session_state()
+hydrate_selection_from_widgets()
+clamp_editor_state()
+
+st.markdown(
+    """
+<section class="hero-panel">
+    <p class="eyebrow">PDF PAGE STUDIO</p>
+    <div class="hero-grid">
+        <div>
+            <h1>페이지 단위로 재배열하는 PDF 작업대</h1>
+            <p>
+                업로드한 문서를 페이지 카드로 펼친 뒤, 원하는 페이지를 선택해서 한 번에 이동하고,
+                필요 없는 장은 바로 지우고, 다른 PDF는 중간 위치에 끼워 넣은 뒤 다시 저장합니다.
+            </p>
+        </div>
+        <div class="hero-aside">
+            <h3>새 편집 흐름</h3>
+            <div class="hero-pills">
+                <span>페이지 썸네일 캔버스</span>
+                <span>선택 후 배치 이동</span>
+                <span>삽입 위치 커서</span>
+                <span>즉시 삭제</span>
+            </div>
+        </div>
+    </div>
+</section>
+""",
+    unsafe_allow_html=True,
 )
 
-if uploaded_files:
-    sync_uploaded_files(uploaded_files)
+show_notices()
 
-if st.session_state.file_list:
-    st.markdown("---")
-    
-    # 파일 개수 표시
-    col1, col2, col3 = st.columns([2, 1, 1])
-    with col1:
-        st.markdown(f"### 🎯 업로드된 파일 ({len(st.session_state.file_list)}개)")
-    with col2:
-        total_size = sum(file.size for file in st.session_state.file_list) / (1024 * 1024)
-        st.metric("총 용량", f"{total_size:.2f} MB")
-    with col3:
-        if st.button("🗑️ 전체 삭제", use_container_width=True):
-            clear_uploaded_files()
+total_pages = len(st.session_state.page_items)
+selected_count = len(get_selected_page_ids_in_order())
+active_document_count = len({page["document_id"] for page in st.session_state.page_items})
+
+metric_col1, metric_col2, metric_col3, metric_col4 = st.columns(4)
+with metric_col1:
+    st.metric("활성 문서", f"{active_document_count}개")
+with metric_col2:
+    st.metric("편집 페이지", f"{total_pages}장")
+with metric_col3:
+    st.metric("선택 페이지", f"{selected_count}장")
+with metric_col4:
+    st.metric("다음 삽입 슬롯", f"{st.session_state.insert_position + 1}")
+
+st.markdown('<div class="section-kicker">INTAKE</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-title">소스 문서 추가</div>', unsafe_allow_html=True)
+
+with st.container(border=True):
+    info_col, action_col1, action_col2, action_col3 = st.columns([3, 1, 1, 1])
+    with info_col:
+        st.markdown(
+            f'<div class="section-note">{describe_insert_position()}</div>',
+            unsafe_allow_html=True,
+        )
+    with action_col1:
+        if st.button("맨 앞 삽입", use_container_width=True, disabled=not total_pages):
+            set_insert_position(0)
             st.rerun()
-    
-    st.markdown("---")
-    st.markdown("### 🔄 파일 순서 조정")
-    sort_col1, sort_col2 = st.columns(2)
-    with sort_col1:
-        if st.button("🔤 A-Z / 1-9 정렬", use_container_width=True):
-            sort_uploaded_files(reverse=False)
+    with action_col2:
+        if st.button("맨 뒤 삽입", use_container_width=True, disabled=not total_pages):
+            set_insert_position(total_pages)
             st.rerun()
-    with sort_col2:
-        if st.button("🔠 Z-A / 9-1 역정렬", use_container_width=True):
-            sort_uploaded_files(reverse=True)
+    with action_col3:
+        if st.button("캔버스 비우기", use_container_width=True, disabled=not total_pages):
+            reset_editor()
             st.rerun()
 
-    st.info("💡 **팁**: 버튼으로 이름 기준 정렬하거나, 아래 파일명을 드래그하여 세부 순서를 직접 바꿀 수 있습니다.")
-
-    # 드래그 앤 드롭 정렬 (이름 기반)
-    file_names = [file.name for file in st.session_state.file_list]
-    sorted_names = sort_items(
-        file_names,
-        direction="horizontal",
-        key=f"drag_sort_key_{st.session_state.sortable_key_version}"
+    uploaded_files = st.file_uploader(
+        "PDF, 이미지, DOCX를 선택하세요",
+        type=SUPPORTED_TYPES,
+        accept_multiple_files=True,
+        key=f"file_uploader_{st.session_state.uploader_key}",
+        help="업로드 후 현재 삽입 위치 기준으로 페이지가 편집 캔버스에 추가됩니다.",
     )
-    
-    # 정렬 결과 반영
-    if sorted_names != file_names:
-        name_to_file = {f.name: f for f in st.session_state.file_list}
-        st.session_state.file_list = [name_to_file[name] for name in sorted_names]
-        st.rerun()
 
-    # 정렬된 결과에 따른 썸네일 미리보기 그리드
-    st.markdown("---")
-    st.markdown("### 📸 미리보기")
-    
-    cols_per_row = 5
-    for i in range(0, len(st.session_state.file_list), cols_per_row):
-        cols = st.columns(cols_per_row)
-        for j in range(cols_per_row):
-            idx = i + j
-            if idx < len(st.session_state.file_list):
-                file = st.session_state.file_list[idx]
-                with cols[j]:
+    upload_col1, upload_col2 = st.columns([2, 1])
+    with upload_col1:
+        if uploaded_files:
+            st.caption(
+                f"{len(uploaded_files)}개 문서가 준비되었습니다. 버튼을 누르면 현재 삽입 위치에 추가됩니다."
+            )
+        else:
+            st.caption("PDF는 페이지별로 분해되고, 이미지와 DOCX도 PDF 페이지로 변환되어 같은 방식으로 편집됩니다.")
+    with upload_col2:
+        add_disabled = not uploaded_files
+        if st.button("현재 위치에 문서 추가", type="primary", use_container_width=True, disabled=add_disabled):
+            with st.spinner("문서를 페이지 편집 캔버스로 펼치는 중입니다..."):
+                add_documents_to_canvas(uploaded_files)
+            refresh_uploader()
+            st.rerun()
+
+if not total_pages:
+    st.markdown(
+        """
+<div class="empty-grid">
+    <div class="empty-card">
+        <div style="font-size: 2.2rem;">1</div>
+        <h3>문서를 펼칩니다</h3>
+        <p>업로드한 PDF를 페이지 단위 카드로 풀어내서 전체 순서를 한눈에 볼 수 있게 만듭니다.</p>
+    </div>
+    <div class="empty-card">
+        <div style="font-size: 2.2rem;">2</div>
+        <h3>선택해서 이동합니다</h3>
+        <p>드래그만 강요하지 않고, 여러 페이지를 선택한 뒤 원하는 시작 위치 번호로 한 번에 이동시킵니다.</p>
+    </div>
+    <div class="empty-card">
+        <div style="font-size: 2.2rem;">3</div>
+        <h3>중간 삽입 후 저장합니다</h3>
+        <p>특정 페이지 뒤를 삽입 위치로 지정하고 다른 문서를 추가한 다음, 새 PDF로 다시 저장합니다.</p>
+    </div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+else:
+    render_source_summary()
+
+    st.markdown('<div class="section-kicker">EDITOR</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">페이지 캔버스</div>', unsafe_allow_html=True)
+
+    with st.container(border=True):
+        total_canvas_pages = max(1, math.ceil(total_pages / CANVAS_PAGE_SIZE))
+        st.session_state.canvas_page = max(1, min(st.session_state.canvas_page, total_canvas_pages))
+        canvas_start = (st.session_state.canvas_page - 1) * CANVAS_PAGE_SIZE
+        canvas_end = min(canvas_start + CANVAS_PAGE_SIZE, total_pages)
+        visible_pages = st.session_state.page_items[canvas_start:canvas_end]
+
+        nav_col1, nav_col2, nav_col3, nav_col4 = st.columns([1, 1, 2, 2])
+        with nav_col1:
+            if st.button("이전 묶음", use_container_width=True, disabled=st.session_state.canvas_page == 1):
+                st.session_state.canvas_page -= 1
+                st.rerun()
+        with nav_col2:
+            if st.button(
+                "다음 묶음",
+                use_container_width=True,
+                disabled=st.session_state.canvas_page >= total_canvas_pages,
+            ):
+                st.session_state.canvas_page += 1
+                st.rerun()
+        with nav_col3:
+            st.markdown(
+                f'<div class="section-note">현재 표시 범위: {canvas_start + 1} - {canvas_end} / {total_pages}장</div>',
+                unsafe_allow_html=True,
+            )
+        with nav_col4:
+            st.markdown(
+                '<div class="section-note">정렬 UX는 드래그 대신 선택 이동을 기본으로 설계했습니다.</div>',
+                unsafe_allow_html=True,
+            )
+
+        selection_col1, selection_col2, selection_col3, selection_col4 = st.columns(4)
+        with selection_col1:
+            if st.button("현재 묶음 전체 선택", use_container_width=True):
+                select_page_ids([page["id"] for page in visible_pages])
+                st.rerun()
+        with selection_col2:
+            if st.button("전체 선택", use_container_width=True):
+                select_page_ids([page["id"] for page in st.session_state.page_items])
+                st.rerun()
+        with selection_col3:
+            if st.button("선택 해제", use_container_width=True, disabled=selected_count == 0):
+                clear_selection()
+                st.rerun()
+        with selection_col4:
+            if st.button("선택 페이지 삭제", use_container_width=True, disabled=selected_count == 0):
+                remove_pages_by_ids(get_selected_page_ids_in_order())
+                st.rerun()
+
+        selected_ids = get_selected_page_ids_in_order()
+        remaining_slots = max(1, total_pages - len(selected_ids) + 1)
+        st.session_state.move_target_position = max(
+            1,
+            min(st.session_state.move_target_position, remaining_slots),
+        )
+
+        move_col1, move_col2 = st.columns([2, 1])
+        with move_col1:
+            st.number_input(
+                "선택 페이지를 배치할 시작 위치",
+                min_value=1,
+                max_value=remaining_slots,
+                step=1,
+                key="move_target_position",
+                disabled=selected_count == 0,
+                help="예: 5를 입력하면 선택한 페이지 묶음이 최종 순서의 5번째 슬롯부터 배치됩니다.",
+            )
+        with move_col2:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("선택 페이지 이동", type="primary", use_container_width=True, disabled=selected_count == 0):
+                moved = move_selected_pages(st.session_state.move_target_position - 1)
+                if moved:
+                    st.rerun()
+
+        if st.session_state.insert_position == 0:
+            st.markdown(
+                '<div class="insert-banner">현재 삽입 위치는 문서 맨 앞입니다.</div>',
+                unsafe_allow_html=True,
+            )
+
+        cards_per_row = 4
+        for row_start in range(0, len(visible_pages), cards_per_row):
+            cols = st.columns(cards_per_row)
+            for offset, col in enumerate(cols):
+                page_offset = row_start + offset
+                if page_offset >= len(visible_pages):
+                    continue
+
+                page = visible_pages[page_offset]
+                global_index = canvas_start + page_offset
+
+                with col:
                     with st.container(border=True):
-                        # 파일 번호 뱃지
-                        st.markdown(f"<div style='text-align:center; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 0.3rem; border-radius: 8px 8px 0 0; margin: -1rem -1rem 0.5rem -1rem; font-weight: bold;'>#{idx+1}</div>", unsafe_allow_html=True)
-                        
-                        # 썸네일
-                        if file.name in st.session_state.thumbnails:
-                            thumb = st.session_state.thumbnails[file.name]
-                            if thumb == "DOCX_ICON":
-                                st.markdown("<div style='height:120px; display:flex; align-items:center; justify-content:center; background: linear-gradient(135deg, #e8eeff 0%, #f8f9ff 100%); border-radius:10px; font-size: 3rem;'>📝</div>", unsafe_allow_html=True)
-                            else:
-                                st.image(thumb, use_container_width=True)
+                        st.markdown(
+                            f"""
+<div class="page-topline">
+    <span class="page-chip">#{global_index + 1}</span>
+    <span class="source-pill">{page['source_kind']}</span>
+</div>
+""",
+                            unsafe_allow_html=True,
+                        )
+                        st.image(page["thumbnail"], use_container_width=True)
+                        st.markdown(
+                            f'<div class="page-meta">{html.escape(page["source_name"])}</div>',
+                            unsafe_allow_html=True,
+                        )
+                        st.markdown(
+                            (
+                                f'<div class="page-submeta">원본 {page["source_page_number"]} / '
+                                f'{page["source_total_pages"]} 페이지</div>'
+                            ),
+                            unsafe_allow_html=True,
+                        )
+
+                        checkbox_key = f"select_{page['id']}"
+                        if checkbox_key not in st.session_state:
+                            st.session_state[checkbox_key] = page["id"] in st.session_state.selected_page_ids
+                        is_selected = st.checkbox("선택", key=checkbox_key)
+                        if is_selected:
+                            st.session_state.selected_page_ids.add(page["id"])
                         else:
-                            st.markdown("<div style='height:120px; display:flex; align-items:center; justify-content:center; background: #f5f5f5; border-radius:10px; color: #999;'>미리보기 없음</div>", unsafe_allow_html=True)
-                        
-                        # 파일명 및 정보
-                        display_name = file.name if len(file.name) < 18 else file.name[:15] + "..."
-                        file_size = file.size / 1024  # KB
-                        st.caption(f"**{display_name}**")
-                        st.caption(f"📦 {file_size:.1f} KB")
-                        
-                        # 삭제 버튼
-                        if st.button("🗑️ 삭제", key=f"del_{file.name}", use_container_width=True):
-                            remove_file_at_index(idx)
+                            st.session_state.selected_page_ids.discard(page["id"])
+
+                        action_col1, action_col2 = st.columns(2)
+                        with action_col1:
+                            if st.button(
+                                "앞으로",
+                                key=f"prev_{page['id']}",
+                                use_container_width=True,
+                                disabled=global_index == 0,
+                            ):
+                                move_single_page(page["id"], -1)
+                                st.rerun()
+                        with action_col2:
+                            if st.button(
+                                "뒤로",
+                                key=f"next_{page['id']}",
+                                use_container_width=True,
+                                disabled=global_index == total_pages - 1,
+                            ):
+                                move_single_page(page["id"], 1)
+                                st.rerun()
+
+                        if st.button("여기 뒤에 삽입", key=f"insert_{page['id']}", use_container_width=True):
+                            set_insert_position(global_index + 1)
                             st.rerun()
 
-    st.markdown("---")
+                        if st.button("이 페이지 삭제", key=f"delete_{page['id']}", use_container_width=True):
+                            remove_pages_by_ids([page["id"]])
+                            st.rerun()
 
-    # 병합 섹션
-    st.markdown("### 💾 파일 병합 및 다운로드")
-    
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        output_filename = st.text_input(
-            "저장할 파일 이름", 
-            value="combined_output.pdf",
-            help="병합된 PDF 파일의 이름을 입력하세요"
-        )
-        if not output_filename.endswith(".pdf"):
-            output_filename += ".pdf"
-    
-    with col2:
-        st.markdown("<br>", unsafe_allow_html=True)
-        merge_button = st.button("🚀 PDF 병합 시작!", type="primary", use_container_width=True)
-
-    if merge_button:
-        try:
-            with st.spinner("🔄 PDF 병합을 준비하고 있습니다..."):
-                merger = PdfWriter()
-            
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            status_text.markdown(f"<div style='text-align: center; padding: 1rem; background: #e8eeff; border-radius: 10px; font-weight: bold;'>⏳ 병합 준비 중...</div>", unsafe_allow_html=True)
-            
-            for i, file in enumerate(st.session_state.file_list):
-                progress_percent = (i + 1) / len(st.session_state.file_list)
-                status_text.markdown(f"<div style='text-align: center; padding: 1rem; background: #e8eeff; border-radius: 10px; font-weight: bold;'>📄 처리 중: {file.name} ({i+1}/{len(st.session_state.file_list)})</div>", unsafe_allow_html=True)
-                
-                file_ext = os.path.splitext(file.name)[1].lower()
-                
-                if file_ext == ".pdf":
-                    # PDF 파일 처리
-                    pdf_reader = PdfReader(file)
-                    merger.append(pdf_reader)
-                elif file_ext == ".docx":
-                    # Word 파일 처리 (텍스트 재구성)
-                    if not DOCX_TEXT_SUPPORT:
-                        st.error("python-docx 또는 reportlab이 설치되어 있지 않습니다.")
-                        continue
-
-                    try:
-                        status_text.text(f"텍스트 재구성 중: {file.name}...")
-                        pdf_stream, font_used, has_non_ascii = docx_to_pdf_simple(file.getvalue())
-                        if has_non_ascii and not font_used:
-                            st.warning(
-                                "한글 폰트가 없어 글자가 깨질 수 있습니다. "
-                                "fonts/NanumGothic.ttf 추가를 권장합니다."
+                        if st.session_state.insert_position == global_index + 1:
+                            st.markdown(
+                                '<div class="insert-banner">새 문서는 이 페이지 뒤에 들어갑니다.</div>',
+                                unsafe_allow_html=True,
                             )
-                        pdf_reader = PdfReader(pdf_stream)
-                        merger.append(pdf_reader)
-                    except Exception as e:
-                        st.error(f"텍스트 재구성 중 오류 발생 ({file.name}): {str(e)}")
-                        continue
-                else:
-                    # 이미지 파일 처리 (JPG, PNG 등)
-                    image = Image.open(file)
-                    if image.mode in ("RGBA", "P"):
-                        image = image.convert("RGB")
-                    
-                    img_byte_arr = io.BytesIO()
-                    image.save(img_byte_arr, format="PDF")
-                    img_byte_arr.seek(0)
-                    
-                    img_pdf_reader = PdfReader(img_byte_arr)
-                    merger.append(img_pdf_reader)
-                
-                progress_bar.progress((i + 1) / len(st.session_state.file_list))
 
-            status_text.markdown(f"<div style='text-align: center; padding: 1rem; background: #d4edda; border-radius: 10px; font-weight: bold;'>✨ 최종 PDF 파일 생성 중...</div>", unsafe_allow_html=True)
-            
-            output_pdf_stream = io.BytesIO()
-            merger.write(output_pdf_stream)
-            output_pdf_stream.seek(0)
-            merger.close()
-            
-            progress_bar.progress(1.0)
-            status_text.empty()
-            
-            st.success("🎉 축하합니다! 모든 파일이 성공적으로 병합되었습니다!")
-            
-            # 결과 정보
-            output_size = len(output_pdf_stream.getvalue()) / (1024 * 1024)
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("병합된 파일 수", f"{len(st.session_state.file_list)}개")
-            with col2:
-                st.metric("최종 파일 크기", f"{output_size:.2f} MB")
-            with col3:
-                st.metric("상태", "완료 ✅")
-            
-            st.markdown("---")
-            
-            # 다운로드 버튼
+        if st.session_state.insert_position >= total_pages:
+            st.markdown(
+                '<div class="insert-banner">현재 삽입 위치는 문서 맨 뒤입니다.</div>',
+                unsafe_allow_html=True,
+            )
+
+if total_pages:
+    st.markdown('<div class="section-kicker">EXPORT</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">편집 결과 저장</div>', unsafe_allow_html=True)
+
+    with st.container(border=True):
+        export_col1, export_col2 = st.columns([3, 1])
+        with export_col1:
+            output_filename = st.text_input(
+                "저장할 파일 이름",
+                value=st.session_state.export_filename,
+                help="현재 페이지 순서와 삭제 상태가 그대로 반영된 새 PDF가 생성됩니다.",
+            )
+            if not output_filename.endswith(".pdf"):
+                output_filename += ".pdf"
+            st.session_state.export_filename = output_filename
+        with export_col2:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("편집본 만들기", type="primary", use_container_width=True):
+                with st.spinner("현재 페이지 캔버스를 새 PDF로 저장하는 중입니다..."):
+                    st.session_state.output_pdf_bytes = build_output_pdf()
+
+        if st.session_state.output_pdf_bytes:
+            st.success("편집본 PDF가 준비되었습니다. 바로 다운로드할 수 있습니다.")
             st.download_button(
-                label="📥 병합된 PDF 다운로드",
-                data=output_pdf_stream,
-                file_name=output_filename,
+                label="편집본 PDF 다운로드",
+                data=st.session_state.output_pdf_bytes,
+                file_name=st.session_state.export_filename,
                 mime="application/pdf",
                 use_container_width=True,
-                type="primary"
+                type="primary",
             )
-            
-        except Exception as e:
-            st.error(f"❌ 오류가 발생했습니다: {str(e)}")
-            st.info("💡 **해결 방법**: 파일이 손상되지 않았는지 확인하고 다시 시도해주세요.")
 
-else:
-    # 시작 가이드
-    st.markdown("---")
-    st.markdown("### 🚀 시작하기")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown("""
-        <div style='text-align: center; padding: 2rem; background: linear-gradient(135deg, #e8eeff 0%, #f8f9ff 100%); border-radius: 15px; height: 200px;'>
-            <div style='font-size: 3rem; margin-bottom: 1rem;'>📤</div>
-            <div style='font-weight: bold; font-size: 1.2rem; color: #667eea;'>1. 파일 업로드</div>
-            <div style='color: #666; margin-top: 0.5rem;'>PDF, 이미지, Word 파일을 선택하세요</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown("""
-        <div style='text-align: center; padding: 2rem; background: linear-gradient(135deg, #e8eeff 0%, #f8f9ff 100%); border-radius: 15px; height: 200px;'>
-            <div style='font-size: 3rem; margin-bottom: 1rem;'>🔄</div>
-            <div style='font-weight: bold; font-size: 1.2rem; color: #667eea;'>2. 순서 조정</div>
-            <div style='color: #666; margin-top: 0.5rem;'>드래그하여 파일 순서를 변경하세요</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col3:
-        st.markdown("""
-        <div style='text-align: center; padding: 2rem; background: linear-gradient(135deg, #e8eeff 0%, #f8f9ff 100%); border-radius: 15px; height: 200px;'>
-            <div style='font-size: 3rem; margin-bottom: 1rem;'>💾</div>
-            <div style='font-weight: bold; font-size: 1.2rem; color: #667eea;'>3. 병합 & 다운로드</div>
-            <div style='color: #666; margin-top: 0.5rem;'>병합 버튼을 눌러 완료하세요</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-    
-    # 지원 파일 형식 정보
-    st.markdown("### 📋 지원 파일 형식")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("""
-        - 📄 **PDF** - Adobe PDF 문서
-        - 🖼️ **이미지** - JPG, PNG 형식
-        """)
-    
-    with col2:
-        st.markdown("""
-        - 📝 **Word** - DOCX 문서
-        - 📏 **제한** - 파일당 최대 200MB
-        """)
-
-# 푸터
 st.markdown("---")
-st.markdown("""
-<div style='text-align: center; padding: 2rem; color: #666;'>
-    <p style='font-size: 0.9rem;'>Made with ❤️ using <strong>Streamlit</strong></p>
-    <p style='font-size: 0.8rem; color: #999;'>© 2026 PDF Combiner. All rights reserved.</p>
+st.markdown(
+    """
+<div style="text-align: center; color: #6c7a80; padding: 1rem 0 2rem 0;">
+    <div style="font-family: 'Fraunces', serif; font-size: 1.1rem; color: #1d2930;">PDF Page Studio</div>
+    <div style="font-size: 0.9rem; margin-top: 0.35rem;">페이지 분해, 재배열, 삽입, 삭제를 한 화면에서 처리하는 Streamlit 기반 편집기</div>
 </div>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
