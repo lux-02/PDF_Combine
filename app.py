@@ -2,6 +2,7 @@ import html
 import io
 import math
 import os
+import re
 import uuid
 
 import fitz  # PyMuPDF
@@ -554,7 +555,8 @@ def ensure_session_state():
         "uploader_key": 0,
         "insert_position": 0,
         "canvas_page": 1,
-        "move_target_position": 1,
+        "move_target_position_state": 1,
+        "move_target_position_input": 1,
         "output_pdf_bytes": None,
         "export_filename": "edited_output.pdf",
         "notices": [],
@@ -643,9 +645,9 @@ def clamp_editor_state():
     st.session_state.canvas_page = max(1, min(st.session_state.canvas_page, max_canvas_page))
 
     remaining_slots = max(1, total_pages - len(get_selected_page_ids_in_order()) + 1)
-    st.session_state.move_target_position = max(
+    st.session_state.move_target_position_state = max(
         1,
-        min(st.session_state.move_target_position, remaining_slots),
+        min(st.session_state.move_target_position_state, remaining_slots),
     )
 
 
@@ -677,7 +679,8 @@ def reset_editor():
     st.session_state.page_items = []
     st.session_state.insert_position = 0
     st.session_state.canvas_page = 1
-    st.session_state.move_target_position = 1
+    st.session_state.move_target_position_state = 1
+    st.session_state.move_target_position_input = 1
     st.session_state.output_pdf_bytes = None
     st.session_state.export_filename = "edited_output.pdf"
     set_notices([])
@@ -771,6 +774,42 @@ def move_single_page(page_id, direction):
     invalidate_output()
     clamp_editor_state()
     return True
+
+
+def natural_sort_key(value):
+    parts = re.split(r"(\d+)", value.casefold())
+    return [int(part) if part.isdigit() else part for part in parts]
+
+
+def sort_page_items_by_source(reverse=False):
+    grouped_pages = {}
+    document_order = []
+
+    for page in st.session_state.page_items:
+        document_id = page["document_id"]
+        if document_id not in grouped_pages:
+            grouped_pages[document_id] = []
+            document_order.append(document_id)
+        grouped_pages[document_id].append(page)
+
+    sorted_document_ids = sorted(
+        document_order,
+        key=lambda document_id: natural_sort_key(grouped_pages[document_id][0]["source_name"]),
+        reverse=reverse,
+    )
+
+    sorted_pages = []
+    for document_id in sorted_document_ids:
+        pages = sorted(
+            grouped_pages[document_id],
+            key=lambda page: page["source_page_number"],
+        )
+        sorted_pages.extend(pages)
+
+    st.session_state.page_items = sorted_pages
+    st.session_state.canvas_page = 1
+    invalidate_output()
+    clamp_editor_state()
 
 
 def remove_pages_by_ids(page_ids):
@@ -1005,6 +1044,16 @@ else:
                 unsafe_allow_html=True,
             )
 
+        sort_col1, sort_col2 = st.columns(2)
+        with sort_col1:
+            if st.button("A-Z / 1-9 정렬", use_container_width=True):
+                sort_page_items_by_source(reverse=False)
+                st.rerun()
+        with sort_col2:
+            if st.button("Z-A / 9-1 역정렬", use_container_width=True):
+                sort_page_items_by_source(reverse=True)
+                st.rerun()
+
         selection_col1, selection_col2, selection_col3, selection_col4 = st.columns(4)
         with selection_col1:
             if st.button("현재 묶음 전체 선택", use_container_width=True):
@@ -1025,9 +1074,13 @@ else:
 
         selected_ids = get_selected_page_ids_in_order()
         remaining_slots = max(1, total_pages - len(selected_ids) + 1)
-        st.session_state.move_target_position = max(
+        st.session_state.move_target_position_state = max(
             1,
-            min(st.session_state.move_target_position, remaining_slots),
+            min(st.session_state.move_target_position_state, remaining_slots),
+        )
+        st.session_state.move_target_position_input = max(
+            1,
+            min(st.session_state.move_target_position_input, remaining_slots),
         )
 
         move_col1, move_col2 = st.columns([2, 1])
@@ -1037,14 +1090,15 @@ else:
                 min_value=1,
                 max_value=remaining_slots,
                 step=1,
-                key="move_target_position",
+                key="move_target_position_input",
                 disabled=selected_count == 0,
                 help="예: 5를 입력하면 선택한 페이지 묶음이 최종 순서의 5번째 슬롯부터 배치됩니다.",
             )
+            st.session_state.move_target_position_state = st.session_state.move_target_position_input
         with move_col2:
             st.markdown("<br>", unsafe_allow_html=True)
             if st.button("선택 페이지 이동", type="primary", use_container_width=True, disabled=selected_count == 0):
-                moved = move_selected_pages(st.session_state.move_target_position - 1)
+                moved = move_selected_pages(st.session_state.move_target_position_input - 1)
                 if moved:
                     st.rerun()
 
