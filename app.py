@@ -31,6 +31,20 @@ DOCX_TEXT_SUPPORT = DOCX_PARSER_SUPPORT and REPORTLAB_SUPPORT
 SUPPORTED_TYPES = ["pdf", "jpg", "jpeg", "png", "docx"]
 THUMBNAIL_SCALE = 0.30
 CANVAS_PAGE_SIZE = 12
+EXPORT_COMPRESSION_OPTIONS = {
+    "none": {
+        "label": "원본 유지",
+        "description": "페이지를 다시 조립만 하고 추가 최적화는 하지 않습니다.",
+    },
+    "balanced": {
+        "label": "균형 압축",
+        "description": "중복 객체 정리와 무손실 스트림 압축을 적용합니다.",
+    },
+    "maximum": {
+        "label": "강한 압축",
+        "description": "가능한 무손실 최적화를 최대한 적용합니다.",
+    },
+}
 
 
 st.set_page_config(
@@ -469,6 +483,160 @@ def image_to_pdf_bytes(image_bytes):
     return buffer.getvalue()
 
 
+def format_file_size(size_in_bytes):
+    units = ["B", "KB", "MB", "GB"]
+    size = float(max(0, size_in_bytes))
+    for unit in units:
+        if size < 1024 or unit == units[-1]:
+            if unit == "B":
+                return f"{int(size)} {unit}"
+            return f"{size:.1f} {unit}"
+        size /= 1024
+
+
+def get_pymupdf_save_candidates(compression_profile):
+    if compression_profile == "maximum":
+        return [
+            {
+                "garbage": 4,
+                "clean": True,
+                "deflate": True,
+                "deflate_images": True,
+                "deflate_fonts": True,
+                "use_objstms": 1,
+            },
+            {
+                "garbage": 4,
+                "clean": True,
+                "deflate": True,
+                "deflate_images": True,
+                "deflate_fonts": True,
+            },
+            {"garbage": 4, "clean": True, "deflate": True},
+            {"garbage": 4, "deflate": True},
+            {"garbage": 3, "deflate": True},
+        ]
+
+    return [
+        {"garbage": 3, "deflate": True, "use_objstms": 1},
+        {"garbage": 3, "deflate": True},
+        {"garbage": 3},
+    ]
+
+
+def try_lossless_pypdf_optimization(pdf_bytes):
+    writer = None
+    try:
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+        writer = PdfWriter()
+        for page in reader.pages:
+            writer.add_page(page)
+
+        for page in writer.pages:
+            compress_streams = getattr(page, "compress_content_streams", None)
+            if callable(compress_streams):
+                try:
+                    compress_streams()
+                except Exception:
+                    continue
+
+        compress_objects = getattr(writer, "compress_identical_objects", None)
+        if callable(compress_objects):
+            try:
+                compress_objects(remove_identicals=True, remove_orphans=True)
+            except TypeError:
+                compress_objects()
+
+        output_stream = io.BytesIO()
+        writer.write(output_stream)
+        output_stream.seek(0)
+        return output_stream.getvalue()
+    except Exception:
+        return None
+    finally:
+        if writer is not None:
+            writer.close()
+
+
+def try_lossless_pymupdf_optimization(pdf_bytes, compression_profile):
+    for save_kwargs in get_pymupdf_save_candidates(compression_profile):
+        doc = None
+        try:
+            doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+            return doc.tobytes(**save_kwargs)
+        except TypeError:
+            continue
+        except Exception:
+            return None
+        finally:
+            if doc is not None:
+                doc.close()
+    return None
+
+
+def optimize_pdf_bytes(pdf_bytes, compression_profile):
+    warnings = []
+    candidates = [
+        {
+            "stage": "assembled",
+            "label": "조립본",
+            "bytes": pdf_bytes,
+        }
+    ]
+
+    if compression_profile == "none":
+        return pdf_bytes, {
+            "profile": compression_profile,
+            "assembled_size": len(pdf_bytes),
+            "final_size": len(pdf_bytes),
+            "saved_bytes": 0,
+            "saved_percent": 0.0,
+            "selected_stage": "assembled",
+            "selected_stage_label": "조립본",
+            "warnings": warnings,
+        }
+
+    pypdf_bytes = try_lossless_pypdf_optimization(pdf_bytes)
+    if pypdf_bytes:
+        candidates.append(
+            {
+                "stage": "pypdf",
+                "label": "객체 정리본",
+                "bytes": pypdf_bytes,
+            }
+        )
+    else:
+        warnings.append("pypdf 최적화 단계를 건너뛰고 가능한 압축만 적용했습니다.")
+
+    pymupdf_source = pypdf_bytes or pdf_bytes
+    pymupdf_bytes = try_lossless_pymupdf_optimization(pymupdf_source, compression_profile)
+    if pymupdf_bytes:
+        candidates.append(
+            {
+                "stage": "pymupdf",
+                "label": "무손실 압축본",
+                "bytes": pymupdf_bytes,
+            }
+        )
+    else:
+        warnings.append("PyMuPDF 저장 최적화 단계를 건너뛰고 가장 작은 결과를 유지했습니다.")
+
+    best_candidate = min(candidates, key=lambda candidate: len(candidate["bytes"]))
+    saved_bytes = max(0, len(pdf_bytes) - len(best_candidate["bytes"]))
+    saved_percent = (saved_bytes / len(pdf_bytes) * 100) if pdf_bytes else 0.0
+
+    return best_candidate["bytes"], {
+        "profile": compression_profile,
+        "assembled_size": len(pdf_bytes),
+        "final_size": len(best_candidate["bytes"]),
+        "saved_bytes": saved_bytes,
+        "saved_percent": saved_percent,
+        "selected_stage": best_candidate["stage"],
+        "selected_stage_label": best_candidate["label"],
+        "warnings": warnings,
+    }
+
+
 def create_page_items(pdf_bytes, document_id, source_name, source_kind):
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     page_items = []
@@ -558,7 +726,9 @@ def ensure_session_state():
         "move_target_position_state": 1,
         "move_target_position_input": 1,
         "output_pdf_bytes": None,
+        "output_pdf_meta": None,
         "export_filename": "edited_output.pdf",
+        "compression_profile": "balanced",
         "notices": [],
     }
     for key, value in defaults.items():
@@ -568,6 +738,7 @@ def ensure_session_state():
 
 def invalidate_output():
     st.session_state.output_pdf_bytes = None
+    st.session_state.output_pdf_meta = None
 
 
 def refresh_uploader():
@@ -682,6 +853,7 @@ def reset_editor():
     st.session_state.move_target_position_state = 1
     st.session_state.move_target_position_input = 1
     st.session_state.output_pdf_bytes = None
+    st.session_state.output_pdf_meta = None
     st.session_state.export_filename = "edited_output.pdf"
     set_notices([])
     refresh_uploader()
@@ -837,7 +1009,7 @@ def set_insert_position(position):
     clamp_editor_state()
 
 
-def build_output_pdf():
+def assemble_output_pdf():
     writer = PdfWriter()
     reader_cache = {}
     try:
@@ -855,6 +1027,11 @@ def build_output_pdf():
         return output_stream.getvalue()
     finally:
         writer.close()
+
+
+def build_output_pdf(compression_profile):
+    assembled_bytes = assemble_output_pdf()
+    return optimize_pdf_bytes(assembled_bytes, compression_profile)
 
 
 def show_notices():
@@ -1197,7 +1374,7 @@ if total_pages:
     st.markdown('<div class="section-title">편집 결과 저장</div>', unsafe_allow_html=True)
 
     with st.container(border=True):
-        export_col1, export_col2 = st.columns([3, 1])
+        export_col1, export_col2 = st.columns([2.1, 1])
         with export_col1:
             output_filename = st.text_input(
                 "저장할 파일 이름",
@@ -1208,13 +1385,73 @@ if total_pages:
                 output_filename += ".pdf"
             st.session_state.export_filename = output_filename
         with export_col2:
+            compression_profile = st.selectbox(
+                "용량 최적화",
+                options=list(EXPORT_COMPRESSION_OPTIONS.keys()),
+                format_func=lambda key: EXPORT_COMPRESSION_OPTIONS[key]["label"],
+                key="compression_profile",
+                help="문서 구조 정리와 무손실 압축 강도를 선택합니다.",
+            )
+            st.caption(EXPORT_COMPRESSION_OPTIONS[compression_profile]["description"])
+
+        build_col1, build_col2 = st.columns([3, 1])
+        with build_col1:
+            st.caption(
+                "압축 옵션은 다운로드용 PDF에만 적용됩니다. 편집 캔버스의 페이지 내용과 순서는 바뀌지 않습니다."
+            )
+        with build_col2:
             st.markdown("<br>", unsafe_allow_html=True)
             if st.button("편집본 만들기", type="primary", use_container_width=True):
                 with st.spinner("현재 페이지 캔버스를 새 PDF로 저장하는 중입니다..."):
-                    st.session_state.output_pdf_bytes = build_output_pdf()
+                    (
+                        st.session_state.output_pdf_bytes,
+                        st.session_state.output_pdf_meta,
+                    ) = build_output_pdf(compression_profile)
 
-        if st.session_state.output_pdf_bytes:
+        output_meta = st.session_state.output_pdf_meta or {}
+        is_current_output = (
+            st.session_state.output_pdf_bytes is not None
+            and output_meta.get("profile") == compression_profile
+        )
+
+        if st.session_state.output_pdf_bytes and not is_current_output:
+            st.info("압축 옵션이 변경되었습니다. 새 설정으로 다시 `편집본 만들기`를 눌러주세요.")
+
+        if is_current_output:
             st.success("편집본 PDF가 준비되었습니다. 바로 다운로드할 수 있습니다.")
+            metrics_col1, metrics_col2, metrics_col3 = st.columns(3)
+            with metrics_col1:
+                st.metric("최종 파일 크기", format_file_size(output_meta.get("final_size", 0)))
+            with metrics_col2:
+                assembled_size = output_meta.get("assembled_size", 0)
+                if compression_profile == "none":
+                    st.metric("최적화", "사용 안 함")
+                else:
+                    delta_text = (
+                        f"{output_meta.get('saved_percent', 0.0):.1f}% 감소"
+                        if assembled_size and output_meta.get("saved_bytes", 0) > 0
+                        else "변화 거의 없음"
+                    )
+                    st.metric("조립본 대비", delta_text)
+            with metrics_col3:
+                stage_label = output_meta.get("selected_stage_label", "조립본")
+                st.metric("채택 결과", stage_label)
+
+            if compression_profile != "none":
+                assembled_label = format_file_size(output_meta.get("assembled_size", 0))
+                final_label = format_file_size(output_meta.get("final_size", 0))
+                if output_meta.get("saved_bytes", 0) > 0:
+                    st.caption(
+                        f"조립본 {assembled_label} -> 최종 {final_label}로 줄었습니다."
+                    )
+                else:
+                    st.caption(
+                        f"무손실 최적화를 시도했지만 현재 문서는 {assembled_label} 수준이 가장 작았습니다."
+                    )
+
+            for warning in output_meta.get("warnings", []):
+                st.info(warning)
+
             st.download_button(
                 label="편집본 PDF 다운로드",
                 data=st.session_state.output_pdf_bytes,
