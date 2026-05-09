@@ -5,7 +5,7 @@ from typing import Annotated
 from urllib.parse import quote
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from pypdf import PdfReader, PdfWriter
 
 from pdf_studio.export import optimize_pdf_bytes
@@ -79,7 +79,7 @@ async def combine_uploads(files: list[UploadFile]) -> bytes:
 
 @app.get("/", include_in_schema=False)
 def index():
-    return FileResponse(PUBLIC_DIR / "index.html")
+    return RedirectResponse("/index.html", status_code=307)
 
 
 @app.get("/favicon.ico", include_in_schema=False)
