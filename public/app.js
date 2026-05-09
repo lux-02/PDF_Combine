@@ -5,7 +5,8 @@ const fileList = document.querySelector("#fileList");
 const emptyState = document.querySelector("#emptyState");
 const summary = document.querySelector("#summary");
 const clearButton = document.querySelector("#clearButton");
-const sortButton = document.querySelector("#sortButton");
+const sortAscButton = document.querySelector("#sortAscButton");
+const sortDescButton = document.querySelector("#sortDescButton");
 const combineButton = document.querySelector("#combineButton");
 const filenameInput = document.querySelector("#filenameInput");
 const resultText = document.querySelector("#resultText");
@@ -29,7 +30,8 @@ function updateState() {
   summary.textContent = count ? `${count}개 파일 · ${formatBytes(totalBytes)}` : "0개 파일";
   emptyState.hidden = count > 0;
   clearButton.disabled = count === 0;
-  sortButton.disabled = count < 2;
+  sortAscButton.disabled = count < 2;
+  sortDescButton.disabled = count < 2;
   combineButton.disabled = count === 0;
 
   fileList.replaceChildren();
@@ -163,8 +165,18 @@ clearButton.addEventListener("click", () => {
   updateState();
 });
 
-sortButton.addEventListener("click", () => {
-  files.sort((a, b) => a.file.name.localeCompare(b.file.name, "ko", { numeric: true }));
+function compareFileNames(a, b) {
+  return a.file.name.localeCompare(b.file.name, "ko", { numeric: true });
+}
+
+sortAscButton.addEventListener("click", () => {
+  files.sort(compareFileNames);
+  resultText.textContent = "";
+  updateState();
+});
+
+sortDescButton.addEventListener("click", () => {
+  files.sort((a, b) => compareFileNames(b, a));
   resultText.textContent = "";
   updateState();
 });
