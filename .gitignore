@@ -52,3 +52,4 @@ tmp/
 
 # Local agent state
 .omx/
+.vercel

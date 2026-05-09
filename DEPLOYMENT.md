@@ -43,7 +43,7 @@ vercel deploy --prod
 - `public/index.html`: 정적 프론트엔드
 - `public/app.js`: 파일 정렬과 다운로드 처리
 - `public/styles.css`: 화면 스타일
-- `vercel.json`, `.vercelignore`: Vercel 배포 설정
+- `.vercelignore`: Vercel 배포 제외 설정
 
 ## 참고
 
