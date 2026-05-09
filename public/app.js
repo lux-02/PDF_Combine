@@ -58,9 +58,9 @@ function updateState() {
     const actions = document.createElement("div");
     actions.className = "row-actions";
     actions.append(
-      makeRowButton("위로", () => moveFile(index, index - 1), index === 0),
-      makeRowButton("아래로", () => moveFile(index, index + 1), index === files.length - 1),
-      makeRowButton("삭제", () => removeFile(index), false)
+      makeIconButton("↑", "위로", () => moveFile(index, index - 1), index === 0),
+      makeIconButton("↓", "아래로", () => moveFile(index, index + 1), index === files.length - 1),
+      makeIconButton("×", "삭제", () => removeFile(index), false)
     );
 
     row.addEventListener("dragstart", (event) => {
@@ -80,11 +80,13 @@ function updateState() {
   });
 }
 
-function makeRowButton(label, onClick, disabled) {
+function makeIconButton(icon, label, onClick, disabled) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "icon-button";
-  button.textContent = label;
+  button.textContent = icon;
+  button.ariaLabel = label;
+  button.title = label;
   button.disabled = disabled;
   button.addEventListener("click", onClick);
   return button;

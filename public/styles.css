@@ -190,6 +190,15 @@ h2 {
   gap: 6px;
 }
 
+.icon-button {
+  align-items: center;
+  display: inline-flex;
+  font-size: 1.05rem;
+  justify-content: center;
+  min-width: 2.45rem;
+  padding: 0;
+}
+
 .primary {
   background: var(--accent);
   border-color: var(--accent);
