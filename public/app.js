@@ -112,36 +112,30 @@ function removeFile(index) {
   updateState();
 }
 
-function getDownloadName(response) {
-  const disposition = response.headers.get("Content-Disposition") || "";
-  const match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
-  return match ? decodeURIComponent(match[1]) : normalizeFilename(filenameInput.value);
-}
-
 async function combineFiles() {
-  const formData = new FormData();
-  files.forEach((item) => formData.append("files", item.file, item.file.name));
-  formData.append("filename", normalizeFilename(filenameInput.value));
-
   combineButton.disabled = true;
   resultText.textContent = "처리 중";
 
   try {
-    const response = await fetch("/api/combine", {
-      method: "POST",
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: "PDF를 만들 수 없습니다." }));
-      throw new Error(error.detail || "PDF를 만들 수 없습니다.");
+    if (!window.PDFLib) {
+      throw new Error("PDF 처리 모듈을 불러오지 못했습니다.");
     }
 
-    const blob = await response.blob();
+    const mergedPdf = await PDFLib.PDFDocument.create();
+    for (const item of files) {
+      const sourceBytes = await item.file.arrayBuffer();
+      const sourcePdf = await PDFLib.PDFDocument.load(sourceBytes, { ignoreEncryption: false });
+      const pageIndexes = sourcePdf.getPageIndices();
+      const copiedPages = await mergedPdf.copyPages(sourcePdf, pageIndexes);
+      copiedPages.forEach((page) => mergedPdf.addPage(page));
+    }
+
+    const mergedBytes = await mergedPdf.save();
+    const blob = new Blob([mergedBytes], { type: "application/pdf" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = getDownloadName(response);
+    anchor.download = normalizeFilename(filenameInput.value);
     document.body.append(anchor);
     anchor.click();
     anchor.remove();

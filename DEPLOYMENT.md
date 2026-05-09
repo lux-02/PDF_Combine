@@ -39,12 +39,12 @@ vercel deploy --prod
 
 ## 구조
 
-- `app.py`: FastAPI 앱과 `/api/combine` PDF 병합 API
+- `app.py`: FastAPI 앱과 작은 PDF용 `/api/combine` 병합 API
 - `public/index.html`: 정적 프론트엔드
-- `public/app.js`: 파일 정렬과 다운로드 처리
+- `public/app.js`: 파일 정렬과 브라우저 내부 PDF 병합/다운로드 처리
 - `public/styles.css`: 화면 스타일
 - `.vercelignore`: Vercel 배포 제외 설정
 
 ## 참고
 
-PDF는 요청 안에서 처리되고 서버에 저장되지 않습니다. Vercel Functions의 요청 크기와 실행 시간 제한 안에서 동작합니다.
+웹 UI에서 PDF는 브라우저 안에서 처리되고 서버에 저장되지 않습니다. 서버 API는 Vercel Functions의 요청 크기와 실행 시간 제한 안에서만 동작합니다.
