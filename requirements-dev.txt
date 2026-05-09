@@ -1,0 +1,8 @@
+-r requirements.txt
+uvicorn
+pytest
+pytest-cov
+httpx
+Pillow
+python-docx
+reportlab

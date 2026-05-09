@@ -1,0 +1,12 @@
+[run]
+source = pdf_studio
+omit =
+    pdf_studio/state.py
+    pdf_studio/styles.py
+
+[report]
+exclude_lines =
+    pragma: no cover
+    except ImportError
+    except Exception
+    except TypeError

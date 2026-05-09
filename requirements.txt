@@ -1,6 +1,4 @@
-streamlit
+fastapi
+python-multipart
 pypdf
-Pillow
 pymupdf
-python-docx
-reportlab

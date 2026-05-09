@@ -1,46 +1,35 @@
-# PDF Page Studio
+# PDF 합치기
 
-PDF, 이미지, DOCX를 페이지 단위 편집 캔버스로 펼쳐서 재정렬, 삭제, 중간 삽입 후 다시 PDF로 저장하는 Streamlit 애플리케이션입니다.
-
-## 주요 기능
-
-- PDF를 개별 페이지 카드로 분해
-- 페이지 썸네일 미리보기
-- 여러 페이지 선택 후 원하는 위치로 일괄 이동
-- 페이지 단건 삭제 / 선택 삭제
-- 특정 페이지 뒤를 삽입 위치로 지정한 뒤 다른 PDF 추가
-- 이미지(JPG, PNG)와 DOCX도 PDF 페이지로 변환하여 같은 방식으로 편집
-- 최종 편집 결과를 새 PDF로 다운로드
-- 저장 시 `원본 유지 / 균형 압축 / 강한 압축` 옵션으로 PDF 용량 최적화
-
-## 정렬 UX
-
-기존 드래그 중심 정렬 대신 다음 흐름으로 재설계했습니다.
-
-- 페이지 카드에서 바로 `앞으로`, `뒤로`, `삭제`
-- 여러 페이지를 체크한 뒤 시작 위치 번호로 배치 이동
-- `여기 뒤에 삽입`으로 업로드 삽입 지점을 명확하게 지정
-- 페이지가 많을 때를 대비한 캔버스 묶음 보기
-- Export 단계에서 무손실 PDF 압축 결과와 최종 파일 크기 확인
+여러 PDF를 업로드하고 순서를 바꾼 뒤 하나의 PDF로 다운로드하는 FastAPI 앱입니다.
 
 ## 로컬 실행
 
 ```bash
-pip install -r requirements.txt
-streamlit run app.py
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-dev.txt
+uvicorn app:app --reload
 ```
 
-## 필요한 패키지
+브라우저에서 `http://127.0.0.1:8000`을 열면 됩니다.
 
-- streamlit
-- pypdf
-- Pillow
-- pymupdf
-- python-docx
-- reportlab
+## Vercel 배포
 
-## 참고
+Vercel은 `app.py`의 `app = FastAPI()`를 자동으로 감지합니다. `public/**` 파일은 정적 UI로 제공되고, PDF 병합은 `/api/combine`에서 처리됩니다.
 
-- 한글 DOCX를 PDF로 변환할 때 시스템 한글 폰트를 찾지 못하면 글자가 깨질 수 있습니다.
-- `fonts/NanumGothic.ttf`를 두면 한글 렌더링 품질이 좋아집니다.
-- 스캔 기반 PDF는 이미지 비중이 높아서 무손실 압축만으로는 절감 폭이 제한될 수 있습니다.
+```bash
+vercel dev
+vercel deploy
+```
+
+## API
+
+- `GET /api/health`: 상태 확인
+- `POST /api/combine`: `files` 필드에 정렬된 PDF 파일들을 multipart로 전달하면 합친 PDF를 반환
+
+## 테스트
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```

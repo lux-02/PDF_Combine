@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PDF 합치기</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <h1>PDF 합치기</h1>
+          <p>업로드, 정렬, 다운로드</p>
+        </div>
+        <div class="status-pill" id="summary">0개 파일</div>
+      </header>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>파일 추가</h2>
+          <button class="secondary" id="clearButton" type="button" disabled>모두 지우기</button>
+        </div>
+        <label class="dropzone" id="dropzone">
+          <input id="fileInput" type="file" accept="application/pdf,.pdf" multiple />
+          <span>PDF 선택</span>
+        </label>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>순서 정렬</h2>
+          <button class="secondary" id="sortButton" type="button" disabled>이름순</button>
+        </div>
+        <ol class="file-list" id="fileList"></ol>
+        <div class="empty" id="emptyState">PDF를 추가하면 순서를 바꿀 수 있습니다.</div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>다운로드</h2>
+          <span class="result" id="resultText"></span>
+        </div>
+        <div class="download-row">
+          <label class="filename-field">
+            <span>파일명</span>
+            <input id="filenameInput" type="text" value="combined.pdf" />
+          </label>
+          <button class="primary" id="combineButton" type="button" disabled>PDF 만들기</button>
+        </div>
+      </section>
+    </main>
+    <script src="/app.js" defer></script>
+  </body>
+</html>
