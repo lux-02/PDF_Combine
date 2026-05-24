@@ -84,3 +84,4 @@ def test_optimize_endpoint_rejects_empty_file():
     )
 
     assert response.status_code == 400
+    assert "빈 파일" in response.json()["detail"]

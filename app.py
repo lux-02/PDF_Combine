@@ -120,6 +120,9 @@ async def optimize_pdf(
     filename: Annotated[str, Form()] = "",
 ):
     data = await read_pdf_upload(file)
+    MAX_OPTIMIZE_BYTES = 100 * 1024 * 1024  # 100 MB
+    if len(data) > MAX_OPTIMIZE_BYTES:
+        raise HTTPException(status_code=413, detail="100MB 이하의 PDF만 최적화할 수 있습니다.")
     try:
         reader = PdfReader(io.BytesIO(data))
         if reader.is_encrypted:
