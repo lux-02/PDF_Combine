@@ -276,3 +276,38 @@ h2 {
     width: 100%;
   }
 }
+
+/* ── Tab bar ── */
+.tab-bar {
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 0;
+  margin-bottom: 8px;
+}
+
+.tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+  font-weight: 500;
+  margin-bottom: -1px;
+  min-height: auto;
+  padding: 10px 16px;
+}
+
+.tab.active {
+  border-bottom-color: var(--accent);
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.tab:hover:not(.active) {
+  color: var(--ink);
+}
+
+.opt-file-row {
+  margin-top: 8px;
+}
