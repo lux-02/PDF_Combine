@@ -3,55 +3,101 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>PDF 합치기</title>
+    <title>PDF 도구</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <main class="shell">
       <header class="topbar">
         <div>
-          <h1>PDF 합치기</h1>
-          <p>업로드, 정렬, 다운로드</p>
+          <h1>PDF 도구</h1>
+          <p>합치기 · 용량 줄이기</p>
         </div>
         <div class="status-pill" id="summary">0개 파일</div>
       </header>
 
-      <section class="panel">
-        <div class="panel-header">
-          <h2>파일 추가</h2>
-          <button class="secondary" id="clearButton" type="button" disabled>모두 지우기</button>
-        </div>
-        <label class="dropzone" id="dropzone">
-          <input id="fileInput" type="file" accept="application/pdf,.pdf,image/png,image/jpeg,.png,.jpg,.jpeg" multiple />
-          <span>PDF / 이미지 선택</span>
-        </label>
-      </section>
+      <nav class="tab-bar">
+        <button class="tab active" data-tab="combine" type="button">합치기</button>
+        <button class="tab" data-tab="optimize" type="button">용량 줄이기</button>
+      </nav>
 
-      <section class="panel">
-        <div class="panel-header">
-          <h2>순서 정렬</h2>
-          <div class="sort-actions">
-            <button class="secondary" id="sortAscButton" type="button" disabled>A-Z / 1-9</button>
-            <button class="secondary" id="sortDescButton" type="button" disabled>Z-A / 9-1</button>
+      <!-- 합치기 탭 -->
+      <div id="tab-combine">
+        <section class="panel">
+          <div class="panel-header">
+            <h2>파일 추가</h2>
+            <button class="secondary" id="clearButton" type="button" disabled>모두 지우기</button>
           </div>
-        </div>
-        <ol class="file-list" id="fileList"></ol>
-        <div class="empty" id="emptyState">PDF 또는 이미지(PNG/JPG)를 추가하면 순서를 바꿀 수 있습니다.</div>
-      </section>
-
-      <section class="panel">
-        <div class="panel-header">
-          <h2>다운로드</h2>
-          <span class="result" id="resultText"></span>
-        </div>
-        <div class="download-row">
-          <label class="filename-field">
-            <span>파일명</span>
-            <input id="filenameInput" type="text" value="combined.pdf" />
+          <label class="dropzone" id="dropzone">
+            <input id="fileInput" type="file" accept="application/pdf,.pdf,image/png,image/jpeg,.png,.jpg,.jpeg" multiple />
+            <span>PDF / 이미지 선택</span>
           </label>
-          <button class="primary" id="combineButton" type="button" disabled>PDF 만들기</button>
-        </div>
-      </section>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h2>순서 정렬</h2>
+            <div class="sort-actions">
+              <button class="secondary" id="sortAscButton" type="button" disabled>A-Z / 1-9</button>
+              <button class="secondary" id="sortDescButton" type="button" disabled>Z-A / 9-1</button>
+            </div>
+          </div>
+          <ol class="file-list" id="fileList"></ol>
+          <div class="empty" id="emptyState">PDF 또는 이미지(PNG/JPG)를 추가하면 순서를 바꿀 수 있습니다.</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h2>다운로드</h2>
+            <span class="result" id="resultText"></span>
+          </div>
+          <div class="download-row">
+            <label class="filename-field">
+              <span>파일명</span>
+              <input id="filenameInput" type="text" value="combined.pdf" />
+            </label>
+            <button class="primary" id="combineButton" type="button" disabled>PDF 만들기</button>
+          </div>
+        </section>
+      </div>
+
+      <!-- 용량 줄이기 탭 -->
+      <div id="tab-optimize" hidden>
+        <section class="panel">
+          <div class="panel-header">
+            <h2>파일 선택</h2>
+          </div>
+          <label class="dropzone" id="optimizeDropzone">
+            <input id="optimizeFileInput" type="file" accept="application/pdf,.pdf" />
+            <span id="optimizeDropLabel">PDF 선택</span>
+          </label>
+          <div class="file-row opt-file-row" id="optimizeFileRow" hidden>
+            <div class="file-meta">
+              <div>
+                <span id="optimizeFileName"></span>
+                <small id="optimizeFileSize"></small>
+              </div>
+            </div>
+            <div class="row-actions">
+              <button class="icon-button" id="optimizeClearBtn" type="button" aria-label="삭제" title="삭제">×</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h2>다운로드</h2>
+            <span class="result" id="optimizeResultText"></span>
+          </div>
+          <div class="download-row">
+            <label class="filename-field">
+              <span>파일명</span>
+              <input id="optimizeFilenameInput" type="text" placeholder="파일명을 입력하세요" />
+            </label>
+            <button class="primary" id="optimizeButton" type="button" disabled>최적화</button>
+          </div>
+        </section>
+      </div>
     </main>
     <script src="/pdf-lib.min.js"></script>
     <script src="/app.js" defer></script>
