@@ -62,7 +62,7 @@ def test_optimize_endpoint_returns_compressed_pdf(minimal_pdf):
     assert "output.pdf" in response.headers["content-disposition"]
     assert int(response.headers["x-original-size"]) > 0
     assert int(response.headers["x-optimized-size"]) > 0
-    assert response.headers["x-saved-percent"] is not None
+    assert float(response.headers["x-saved-percent"]) >= 0
 
 
 def test_optimize_endpoint_rejects_non_pdf(minimal_pdf):
