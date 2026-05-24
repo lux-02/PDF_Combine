@@ -273,29 +273,16 @@ async function runOptimize() {
   optimizeResultText.textContent = "처리 중";
 
   try {
+    if (!window.PDFLib) throw new Error("PDF 처리 모듈을 불러오지 못했습니다.");
+
+    const originalSize = optimizeFile.size;
+    const sourceBytes = await optimizeFile.arrayBuffer();
+    const doc = await PDFLib.PDFDocument.load(sourceBytes, { ignoreEncryption: false });
+    const optimizedBytes = await doc.save({ useObjectStreams: true });
+    const optimizedSize = optimizedBytes.byteLength;
+
     const filename = normalizeFilename(optimizeFilenameInput.value);
-    const formData = new FormData();
-    formData.append("file", optimizeFile);
-    formData.append("filename", filename);
-
-    const response = await fetch("/api/optimize", { method: "POST", body: formData });
-
-    if (!response.ok) {
-      let detail = "최적화에 실패했습니다.";
-      try {
-        const err = await response.json();
-        if (err?.detail) detail = err.detail;
-      } catch {
-        // non-JSON response body
-      }
-      throw new Error(detail);
-    }
-
-    const originalSize = parseInt(response.headers.get("x-original-size") || "0", 10);
-    const optimizedSize = parseInt(response.headers.get("x-optimized-size") || "0", 10);
-    const savedPercent = parseFloat(response.headers.get("x-saved-percent") || "0");
-
-    const blob = await response.blob();
+    const blob = new Blob([optimizedBytes], { type: "application/pdf" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
@@ -305,6 +292,7 @@ async function runOptimize() {
     anchor.remove();
     URL.revokeObjectURL(url);
 
+    const savedPercent = originalSize > 0 ? ((originalSize - optimizedSize) / originalSize) * 100 : 0;
     if (savedPercent < 0.1) {
       optimizeResultText.textContent = `이미 최적화된 파일입니다 · ${formatBytes(optimizedSize)}`;
     } else {
