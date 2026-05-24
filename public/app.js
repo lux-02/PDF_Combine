@@ -268,19 +268,27 @@ function clearOptimizeFile() {
 }
 
 async function runOptimize() {
+  if (!optimizeFile || !isPdf(optimizeFile)) return;
   optimizeButton.disabled = true;
   optimizeResultText.textContent = "처리 중";
 
   try {
+    const filename = normalizeFilename(optimizeFilenameInput.value);
     const formData = new FormData();
     formData.append("file", optimizeFile);
-    formData.append("filename", normalizeFilename(optimizeFilenameInput.value));
+    formData.append("filename", filename);
 
     const response = await fetch("/api/optimize", { method: "POST", body: formData });
 
     if (!response.ok) {
-      const err = await response.json();
-      throw new Error(err.detail || "최적화에 실패했습니다.");
+      let detail = "최적화에 실패했습니다.";
+      try {
+        const err = await response.json();
+        if (err?.detail) detail = err.detail;
+      } catch {
+        // non-JSON response body
+      }
+      throw new Error(detail);
     }
 
     const originalSize = parseInt(response.headers.get("x-original-size") || "0", 10);
@@ -291,7 +299,7 @@ async function runOptimize() {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = normalizeFilename(optimizeFilenameInput.value);
+    anchor.download = filename;
     document.body.append(anchor);
     anchor.click();
     anchor.remove();
@@ -300,7 +308,7 @@ async function runOptimize() {
     if (savedPercent < 0.1) {
       optimizeResultText.textContent = `이미 최적화된 파일입니다 · ${formatBytes(optimizedSize)}`;
     } else {
-      optimizeResultText.textContent = `${formatBytes(originalSize)} → ${formatBytes(optimizedSize)} (${savedPercent}% 절감)`;
+      optimizeResultText.textContent = `${formatBytes(originalSize)} → ${formatBytes(optimizedSize)} (${savedPercent.toFixed(1)}% 절감)`;
     }
   } catch (error) {
     optimizeResultText.textContent = error.message;
