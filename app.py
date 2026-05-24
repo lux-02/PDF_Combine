@@ -112,3 +112,39 @@ async def combine_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": content_disposition(output_filename)},
     )
+
+
+@app.post("/api/optimize")
+async def optimize_pdf(
+    file: Annotated[UploadFile, File(description="PDF to optimize")],
+    filename: Annotated[str, Form()] = "",
+):
+    data = await read_pdf_upload(file)
+    try:
+        reader = PdfReader(io.BytesIO(data))
+        if reader.is_encrypted:
+            try:
+                reader.decrypt("")
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail="암호화된 PDF는 처리할 수 없습니다.") from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{file.filename}: PDF를 읽을 수 없습니다.",
+        ) from exc
+
+    optimized, meta = optimize_pdf_bytes(data, "balanced")
+    output_filename = normalize_pdf_filename(filename or file.filename or DEFAULT_FILENAME)
+
+    return Response(
+        content=optimized,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": content_disposition(output_filename),
+            "X-Original-Size": str(meta["assembled_size"]),
+            "X-Optimized-Size": str(meta["final_size"]),
+            "X-Saved-Percent": f"{meta['saved_percent']:.1f}",
+        },
+    )

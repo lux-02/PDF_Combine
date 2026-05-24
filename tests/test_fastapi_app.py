@@ -48,3 +48,37 @@ def test_combine_endpoint_rejects_non_pdf(minimal_pdf):
 
     assert response.status_code == 400
     assert "PDF" in response.json()["detail"]
+
+
+def test_optimize_endpoint_returns_compressed_pdf(minimal_pdf):
+    response = client.post(
+        "/api/optimize",
+        data={"filename": "output.pdf"},
+        files=[("file", ("input.pdf", minimal_pdf, "application/pdf"))],
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert "output.pdf" in response.headers["content-disposition"]
+    assert int(response.headers["x-original-size"]) > 0
+    assert int(response.headers["x-optimized-size"]) > 0
+    assert response.headers["x-saved-percent"] is not None
+
+
+def test_optimize_endpoint_rejects_non_pdf(minimal_pdf):
+    response = client.post(
+        "/api/optimize",
+        files=[("file", ("not-pdf.txt", minimal_pdf, "text/plain"))],
+    )
+
+    assert response.status_code == 400
+    assert "PDF" in response.json()["detail"]
+
+
+def test_optimize_endpoint_rejects_empty_file():
+    response = client.post(
+        "/api/optimize",
+        files=[("file", ("empty.pdf", b"", "application/pdf"))],
+    )
+
+    assert response.status_code == 400
