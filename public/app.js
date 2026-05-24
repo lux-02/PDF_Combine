@@ -92,9 +92,17 @@ function makeIconButton(icon, label, onClick, disabled) {
   return button;
 }
 
+function isPdf(file) {
+  return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+}
+
+function isImage(file) {
+  return /\.(png|jpg|jpeg)$/i.test(file.name) || file.type === "image/png" || file.type === "image/jpeg";
+}
+
 function addFiles(selectedFiles) {
   Array.from(selectedFiles)
-    .filter((file) => file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf"))
+    .filter((file) => isPdf(file) || isImage(file))
     .forEach((file) => files.push({ id: crypto.randomUUID(), file }));
   resultText.textContent = "";
   updateState();
@@ -126,10 +134,20 @@ async function combineFiles() {
     const mergedPdf = await PDFLib.PDFDocument.create();
     for (const item of files) {
       const sourceBytes = await item.file.arrayBuffer();
-      const sourcePdf = await PDFLib.PDFDocument.load(sourceBytes, { ignoreEncryption: false });
-      const pageIndexes = sourcePdf.getPageIndices();
-      const copiedPages = await mergedPdf.copyPages(sourcePdf, pageIndexes);
-      copiedPages.forEach((page) => mergedPdf.addPage(page));
+      if (isPdf(item.file)) {
+        const sourcePdf = await PDFLib.PDFDocument.load(sourceBytes, { ignoreEncryption: false });
+        const pageIndexes = sourcePdf.getPageIndices();
+        const copiedPages = await mergedPdf.copyPages(sourcePdf, pageIndexes);
+        copiedPages.forEach((page) => mergedPdf.addPage(page));
+      } else {
+        const isPng = /\.png$/i.test(item.file.name) || item.file.type === "image/png";
+        const image = isPng
+          ? await mergedPdf.embedPng(sourceBytes)
+          : await mergedPdf.embedJpg(sourceBytes);
+        const { width, height } = image.scale(1);
+        const page = mergedPdf.addPage([width, height]);
+        page.drawImage(image, { x: 0, y: 0, width, height });
+      }
     }
 
     const mergedBytes = await mergedPdf.save();
