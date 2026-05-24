@@ -12,6 +12,22 @@ const filenameInput = document.querySelector("#filenameInput");
 const resultText = document.querySelector("#resultText");
 const dropzone = document.querySelector("#dropzone");
 
+// ── Tab switching ──
+const tabButtons = document.querySelectorAll(".tab");
+const tabCombine = document.querySelector("#tab-combine");
+const tabOptimize = document.querySelector("#tab-optimize");
+
+tabButtons.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    tabButtons.forEach((t) => t.classList.remove("active"));
+    btn.classList.add("active");
+    const isOptimize = btn.dataset.tab === "optimize";
+    tabCombine.hidden = isOptimize;
+    tabOptimize.hidden = !isOptimize;
+    summary.hidden = isOptimize;
+  });
+});
+
 function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -213,3 +229,107 @@ dropzone.addEventListener("drop", (event) => {
 });
 
 updateState();
+
+// ── Optimize tab ──
+let optimizeFile = null;
+
+const optimizeFileInput = document.querySelector("#optimizeFileInput");
+const optimizeDropzone = document.querySelector("#optimizeDropzone");
+const optimizeDropLabel = document.querySelector("#optimizeDropLabel");
+const optimizeFileRow = document.querySelector("#optimizeFileRow");
+const optimizeFileName = document.querySelector("#optimizeFileName");
+const optimizeFileSize = document.querySelector("#optimizeFileSize");
+const optimizeClearBtn = document.querySelector("#optimizeClearBtn");
+const optimizeButton = document.querySelector("#optimizeButton");
+const optimizeFilenameInput = document.querySelector("#optimizeFilenameInput");
+const optimizeResultText = document.querySelector("#optimizeResultText");
+
+function setOptimizeFile(file) {
+  if (!file || !isPdf(file)) return;
+  optimizeFile = file;
+  const base = file.name.replace(/\.pdf$/i, "");
+  optimizeFilenameInput.value = `${base}_optimized.pdf`;
+  optimizeFileName.textContent = file.name;
+  optimizeFileSize.textContent = formatBytes(file.size);
+  optimizeDropLabel.textContent = "다른 파일 선택";
+  optimizeFileRow.hidden = false;
+  optimizeButton.disabled = false;
+  optimizeResultText.textContent = "";
+}
+
+function clearOptimizeFile() {
+  optimizeFile = null;
+  optimizeFilenameInput.value = "";
+  optimizeDropLabel.textContent = "PDF 선택";
+  optimizeFileRow.hidden = true;
+  optimizeButton.disabled = true;
+  optimizeResultText.textContent = "";
+  optimizeFileInput.value = "";
+}
+
+async function runOptimize() {
+  optimizeButton.disabled = true;
+  optimizeResultText.textContent = "처리 중";
+
+  try {
+    const formData = new FormData();
+    formData.append("file", optimizeFile);
+    formData.append("filename", normalizeFilename(optimizeFilenameInput.value));
+
+    const response = await fetch("/api/optimize", { method: "POST", body: formData });
+
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.detail || "최적화에 실패했습니다.");
+    }
+
+    const originalSize = parseInt(response.headers.get("x-original-size") || "0", 10);
+    const optimizedSize = parseInt(response.headers.get("x-optimized-size") || "0", 10);
+    const savedPercent = parseFloat(response.headers.get("x-saved-percent") || "0");
+
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = normalizeFilename(optimizeFilenameInput.value);
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+
+    if (savedPercent < 0.1) {
+      optimizeResultText.textContent = `이미 최적화된 파일입니다 · ${formatBytes(optimizedSize)}`;
+    } else {
+      optimizeResultText.textContent = `${formatBytes(originalSize)} → ${formatBytes(optimizedSize)} (${savedPercent}% 절감)`;
+    }
+  } catch (error) {
+    optimizeResultText.textContent = error.message;
+  } finally {
+    optimizeButton.disabled = optimizeFile === null;
+  }
+}
+
+optimizeFileInput.addEventListener("change", (event) => {
+  const file = event.target.files[0];
+  if (file) setOptimizeFile(file);
+  optimizeFileInput.value = "";
+});
+
+optimizeClearBtn.addEventListener("click", clearOptimizeFile);
+optimizeButton.addEventListener("click", runOptimize);
+
+optimizeDropzone.addEventListener("dragover", (event) => {
+  event.preventDefault();
+  optimizeDropzone.classList.add("dragover");
+});
+
+optimizeDropzone.addEventListener("dragleave", () => {
+  optimizeDropzone.classList.remove("dragover");
+});
+
+optimizeDropzone.addEventListener("drop", (event) => {
+  event.preventDefault();
+  optimizeDropzone.classList.remove("dragover");
+  const file = event.dataTransfer.files[0];
+  if (file) setOptimizeFile(file);
+});
