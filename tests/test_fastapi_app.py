@@ -63,6 +63,8 @@ def test_optimize_endpoint_returns_compressed_pdf(minimal_pdf):
     assert int(response.headers["x-original-size"]) > 0
     assert int(response.headers["x-optimized-size"]) > 0
     assert float(response.headers["x-saved-percent"]) >= 0
+    reader = PdfReader(io.BytesIO(response.content))
+    assert len(reader.pages) >= 1
 
 
 def test_optimize_endpoint_rejects_non_pdf(minimal_pdf):
